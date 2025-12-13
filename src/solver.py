@@ -211,6 +211,8 @@ class MCMCSolver:
         
         print_interval = max(1, num_steps // 10)
         
+        solution_found_at_step = None
+        
         for step in range(num_steps):
             if simulated_annealing:
                 # Update beta based on cooling schedule
@@ -263,9 +265,10 @@ class MCMCSolver:
                       f"β={beta:>6.2f}, "
                       f"{rate:>6.0f}/s")
             
-            if current_energy == 0:
-                print(f"\nSOLUTION FOUND at step {step+1}!")
-                break
+            if current_energy == 0 and solution_found_at_step is None:
+                solution_found_at_step = step + 1
+                print(f"\nSOLUTION FOUND at step {step+1}! Continuing run...")
+                
         
         # Reconstruct best state
         self.state.queens = best_queens
@@ -278,6 +281,8 @@ class MCMCSolver:
         print("="*60)
         print(f"Time: {elapsed:.1f}s, Rate: {(step+1)/elapsed:.0f}/s")
         print(f"Best energy: {best_energy}, Solution: {'Yes' if best_energy == 0 else 'No'}")
+        if solution_found_at_step:
+            print(f"First solution found at step: {solution_found_at_step}")
         print("="*60)
         
         return self.state, np.array(energy_history), accepted_count / (step + 1)
@@ -329,6 +334,8 @@ class MCMCSolver:
         
         # Print progress every 10% of steps
         print_interval = max(1, num_steps // 1000)
+        
+        solution_found_at_step = None
         
         for step in range(num_steps):
             if simulated_annealing:
@@ -393,9 +400,9 @@ class MCMCSolver:
                       f"Time={elapsed:>5.1f}s")
             
             # Check for solution
-            if current_energy == 0:
-                print(f"\n SOLUTION FOUND at step {step+1}!")
-                break
+            if current_energy == 0 and solution_found_at_step is None:
+                solution_found_at_step = step + 1
+                print(f"\nSOLUTION FOUND at step {step+1}! Continuing run...")
         
         # Reconstruct best state
         self.state.queens = best_queens
@@ -414,6 +421,8 @@ class MCMCSolver:
         print(f"Best energy found: {best_energy}")
         print(f"Acceptance rate: {final_accept_rate:.2%}")
         print(f"Solution found: {'Yes' if best_energy == 0 else 'No'}")
+        if solution_found_at_step:
+            print(f"First solution found at step: {solution_found_at_step}")
         print("="*60)
         
         return self.state, np.array(energy_history), final_accept_rate

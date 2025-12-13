@@ -234,15 +234,24 @@ def plot_energy_history(energy_history, filename=None):
     return plt.gcf()
 
 
-def plot_averaged_energy_history(histories, filename=None):
-    """Plot averaged energy evolution across multiple runs"""
+def plot_averaged_energy_history(histories, filename=None, metadata=None):
+    """
+    Plot averaged energy evolution across multiple runs with metadata.
+    
+    metadata: dict containing:
+    - beta_range: (start, end) or 'Constant'
+    - steps: int
+    - cooling_method: str
+    - board_size: int
+    - final_energy: float (average)
+    """
     # Convert to numpy array if not already
     histories_arr = np.array(histories)
     
     mean_energy = np.mean(histories_arr, axis=0)
     std_energy = np.std(histories_arr, axis=0)
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 7))  # Slightly taller for subtitle
     x = np.arange(len(mean_energy))
     
     plt.plot(x, mean_energy, label='Average Energy', color='blue')
@@ -254,9 +263,34 @@ def plot_averaged_energy_history(histories, filename=None):
         
     plt.xlabel('Iteration')
     plt.ylabel('Energy')
-    plt.title(f'Averaged Energy Evolution ({len(histories)} runs)')
+    
+    title = f'Averaged Energy Evolution ({len(histories)} runs)'
+    
+    if metadata:
+        beta_info = f"β: {metadata['beta_range']}"
+        config_info = f"N={metadata['board_size']}, Steps={metadata['steps']}, Cooling={metadata['cooling_method']}"
+        result_info = f"Avg Final Energy: {metadata['final_energy']:.2f}"
+        
+        subtitle = f"{config_info}\n{beta_info} | {result_info}"
+        plt.title(title + '\n' + subtitle, fontsize=11)
+        
+        # Add a text box with details
+        textstr = '\n'.join((
+            f"Board Size: {metadata['board_size']}x{metadata['board_size']}x{metadata['board_size']}",
+            f"Steps: {metadata['steps']}",
+            f"Cooling: {metadata['cooling_method']}",
+            f"Beta: {metadata['beta_range']}",
+            f"Avg Final Energy: {metadata['final_energy']:.2f}"
+        ))
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        plt.gca().text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=9,
+                       verticalalignment='top', bbox=props)
+    else:
+        plt.title(title)
+        
     plt.grid(True)
-    plt.legend()
+    plt.legend(loc='upper right')
+    plt.tight_layout()
     
     if filename:
         plt.savefig(filename)

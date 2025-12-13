@@ -200,9 +200,21 @@ def main():
         print(f"Minimum Final Energy: {min_energy}")
         print(f"Success Rate: {success_rate:.1%}")
         
+        # Prepare metadata for plot
+        simulated_annealing = config.get('simulated_annealing', True)
+        beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else f"{config['beta_min']} (Constant)"
+        
+        metadata = {
+            'beta_range': beta_range,
+            'steps': config['steps'],
+            'cooling_method': config['cooling'] if simulated_annealing else 'None',
+            'board_size': config['size'],
+            'final_energy': avg_energy
+        }
+        
         # Visualize Averaged Energy
         avg_energy_file = 'averaged_energy_history.png'
-        plot_averaged_energy_history(padded_histories, avg_energy_file)
+        plot_averaged_energy_history(padded_histories, avg_energy_file, metadata=metadata)
         print(f"\nAveraged energy history saved as {avg_energy_file}")
         
         # Visualize Best Solution
@@ -214,7 +226,7 @@ def main():
         
         if show_plots:
             print("\nDisplaying plots (close windows to exit)...")
-            plot_averaged_energy_history(padded_histories)
+            plot_averaged_energy_history(padded_histories, metadata=metadata)
             visualize_solution(best_solution)
             plt.show()
 

@@ -14,7 +14,8 @@ def check_solvability(N):
     Check if the 3D N² Queens problem is theoretically solvable.
     
     Based on Klarner's theorem (1967):
-    - A solution exists if gcd(N, 210) = 1
+    - If gcd(N, 210) = 1 a solution exists (sufficient condition, conjectured necessary)
+    - We write unsolvable if gcd(N, 210) != 1 (even though it might be solvable)
     - 210 = 2 × 3 × 5 × 7
     - This means N must not be divisible by 2, 3, 5, or 7
     
@@ -55,8 +56,8 @@ def print_solvability_info(info):
         print(f"\nSOLVABLE: N={info['N']} has gcd(N,210)=1")
         print("   A zero-energy solution EXISTS (Klarner's theorem)")
     else:
-        print(f"\nUNSOLVABLE: N={info['N']} is divisible by {info['factors']}")
-        print("   No zero-energy solution exists!")
+        print(f"\N={info['N']} is divisible by {info['factors']}")
+        print("   No guarantees that the zero-energy solution exists!")
         print("   The algorithm will find the MINIMUM energy configuration.")
     print("="*60 + "\n")
 
@@ -66,9 +67,8 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def run_solver(config, seed):
-    """Run the solver with parameters from config and specific seed."""
-    size = config['size']
+def run_solver(config, seed, size):
+    """Run the solver with parameters from config and specific seed and size."""
     steps = config['steps']
     method = config['method']
     cooling = config['cooling']
@@ -76,6 +76,7 @@ def run_solver(config, seed):
     beta_max = config['beta_max']
     simulated_annealing = config.get('simulated_annealing', True)
     
+    # Create fresh state and solver for each run to avoid state leakage
     key = jax.random.PRNGKey(seed)
     board = BoardState(key, size)
     solver = MCMCSolver(board)
@@ -89,6 +90,7 @@ def run_solver(config, seed):
             num_steps=steps,
             initial_beta=beta_min,
             final_beta=beta_max,
+            cooling=cooling,
             simulated_annealing=simulated_annealing
         )
     elif method == 'improved':
@@ -130,105 +132,125 @@ def main():
         print(f"Error loading config: {e}")
         return
 
-    # Check solvability first
-    solvability = check_solvability(config['size'])
-    print_solvability_info(solvability)
-    
+    # Handle 'sizes' list or fallback to single 'size'
+    sizes = config.get('sizes')
+    if sizes is None:
+        if 'size' in config:
+            sizes = [config['size']]
+        else:
+            print("Error: No 'sizes' or 'size' specified in config.")
+            return
+            
+    if not isinstance(sizes, list):
+        sizes = [sizes]
+
     mode = config.get('mode', 'single')
-    base_seed = config['seed']
     show_plots = config.get('show', False)
     
-    if mode == 'single':
-        solution, energy_history, metric = run_solver(config, base_seed)
+    for size in sizes:
+        print("\n" + "="*80)
+        print(f"STARTING RUNS FOR BOARD SIZE N={size}")
+        print("="*80 + "\n")
         
-        print("\nResults:")
-        print(f"Final energy: {solution.energy}")
-        print(f"Acceptance rate: {metric:.2%}")
+        # Check solvability first
+        solvability = check_solvability(size)
+        print_solvability_info(solvability)
+        
+        if mode == 'single':
+            base_seed = config.get('seed', 42)
+            solution, energy_history, metric = run_solver(config, base_seed, size)
+            
+            print("\nResults:")
+            print(f"Final energy: {solution.energy}")
+            print(f"Acceptance rate: {metric:.2%}")
 
-        if float(solution.energy) == 0:
-            print("Valid solution found!")
-        else:
-            print("No zero-energy solution found.")
+            if float(solution.energy) == 0:
+                print("Valid solution found!")
+            else:
+                print("No zero-energy solution found.")
+                
+            # Visualize
+            sol_file = f"solution_N{size}_seed{base_seed}.png"
+            visualize_solution(solution, sol_file)
+            print(f"\n3D visualization saved as {sol_file}")
             
-        # Visualize
-        sol_file = f"solution_{config['size']}x{config['size']}x{config['size']}.png"
-        visualize_solution(solution, sol_file)
-        print(f"\n3D visualization saved as {sol_file}")
-        
-        energy_file = 'energy_history.png'
-        plot_energy_history(energy_history, energy_file)
-        print(f"Energy history saved as {energy_file}")
-        
-        if show_plots:
-            print("\nDisplaying plots (close windows to exit)...")
-            visualize_solution(solution)
-            plot_energy_history(energy_history)
-            plt.show()
+            energy_file = f"energy_history_N{size}_seed{base_seed}.png"
+            plot_energy_history(energy_history, energy_file)
+            print(f"Energy history saved as {energy_file}")
             
-    elif mode == 'multiple':
-        num_runs = config.get('num_runs', 5)
-        print(f"Executing {num_runs} runs in '{mode}' mode...")
-        
-        histories = []
-        final_energies = []
-        solutions = []
-        
-        for i in range(num_runs):
-            print(f"\n--- Run {i+1}/{num_runs} ---")
-            seed = base_seed + i
-            solution, energy_history, metric = run_solver(config, seed)
+            if show_plots:
+                print("\nDisplaying plots (close windows to exit)...")
+                visualize_solution(solution)
+                plot_energy_history(energy_history)
+                plt.show()
+                
+        elif mode == 'multiple':
+            num_runs = config.get('num_runs', 5)
+            print(f"Executing {num_runs} runs in '{mode}' mode for N={size}...")
             
-            histories.append(energy_history)
-            final_energies.append(float(solution.energy))
-            solutions.append(solution)
+            # Simple incremental seed generation
+            base_seed = config.get('seed', 42)
+            seeds = [base_seed + i for i in range(num_runs)]
             
-            print(f"Run {i+1} Result: Energy={solution.energy}")
-        
-        # Determine max length for padding
-        max_len = max(len(h) for h in histories)
-        padded_histories = [pad_history(h, max_len) for h in histories]
-        
-        # Statistics
-        avg_energy = np.mean(final_energies)
-        min_energy = np.min(final_energies)
-        success_rate = sum(e == 0 for e in final_energies) / num_runs
-        
-        print("\n" + "="*60)
-        print(f"MULTIPLE RUNS SUMMARY ({num_runs} runs)")
-        print("="*60)
-        print(f"Average Final Energy: {avg_energy:.2f}")
-        print(f"Minimum Final Energy: {min_energy}")
-        print(f"Success Rate: {success_rate:.1%}")
-        
-        # Prepare metadata for plot
-        simulated_annealing = config.get('simulated_annealing', True)
-        beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else f"{config['beta_min']} (Constant)"
-        
-        metadata = {
-            'beta_range': beta_range,
-            'steps': config['steps'],
-            'cooling_method': config['cooling'] if simulated_annealing else 'None',
-            'board_size': config['size'],
-            'final_energy': avg_energy
-        }
-        
-        # Visualize Averaged Energy
-        avg_energy_file = 'averaged_energy_history.png'
-        plot_averaged_energy_history(padded_histories, avg_energy_file, metadata=metadata)
-        print(f"\nAveraged energy history saved as {avg_energy_file}")
-        
-        # Visualize Best Solution
-        best_idx = np.argmin(final_energies)
-        best_solution = solutions[best_idx]
-        best_sol_file = f"best_solution_{config['size']}x{config['size']}x{config['size']}.png"
-        visualize_solution(best_solution, best_sol_file)
-        print(f"Best solution visualization saved as {best_sol_file}")
-        
-        if show_plots:
-            print("\nDisplaying plots (close windows to exit)...")
-            plot_averaged_energy_history(padded_histories, metadata=metadata)
-            visualize_solution(best_solution)
-            plt.show()
+            histories = []
+            final_energies = []
+            solutions = []
+            
+            for i, seed in enumerate(seeds):
+                print(f"\n--- Run {i+1}/{num_runs} (N={size}) ---")
+                solution, energy_history, metric = run_solver(config, seed, size)
+                
+                histories.append(energy_history)
+                final_energies.append(float(solution.energy))
+                solutions.append(solution)
+                
+                print(f"Run {i+1} Result: Energy={solution.energy}")
+            
+            # Determine max length for padding
+            max_len = max(len(h) for h in histories)
+            padded_histories = [pad_history(h, max_len) for h in histories]
+            
+            # Statistics
+            avg_energy = np.mean(final_energies)
+            min_energy = np.min(final_energies)
+            success_rate = sum(e == 0 for e in final_energies) / num_runs
+            
+            print("\n" + "="*60)
+            print(f"MULTIPLE RUNS SUMMARY (N={size}, {num_runs} runs)")
+            print("="*60)
+            print(f"Average Final Energy: {avg_energy:.2f}")
+            print(f"Minimum Final Energy: {min_energy}")
+            print(f"Success Rate: {success_rate:.1%}")
+            
+            # Prepare metadata for plot
+            simulated_annealing = config.get('simulated_annealing', True)
+            beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else f"{config['beta_min']} (Constant)"
+            
+            metadata = {
+                'beta_range': beta_range,
+                'steps': config['steps'],
+                'cooling_method': config['cooling'] if simulated_annealing else 'None',
+                'board_size': size,
+                'final_energy': avg_energy
+            }
+            
+            # Visualize Averaged Energy
+            avg_energy_file = f"averaged_energy_history_N{size}.png"
+            plot_averaged_energy_history(padded_histories, avg_energy_file, metadata=metadata)
+            print(f"\nAveraged energy history saved as {avg_energy_file}")
+            
+            # Visualize Best Solution
+            best_idx = np.argmin(final_energies)
+            best_solution = solutions[best_idx]
+            best_sol_file = f"best_solution_N{size}.png"
+            visualize_solution(best_solution, best_sol_file)
+            print(f"Best solution visualization saved as {best_sol_file}")
+            
+            if show_plots:
+                print("\nDisplaying plots (close windows to exit)...")
+                plot_averaged_energy_history(padded_histories, metadata=metadata)
+                visualize_solution(best_solution)
+                plt.show()
 
     else:
         print(f"Error: Unknown mode '{mode}' in config. Use 'single' or 'multiple'.")

@@ -289,7 +289,7 @@ class MCMCSolver:
     
 
         
-    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True):
+    def run(self, key, num_steps, initial_beta, final_beta, cooling, simulated_annealing):
         """
         Run MCMC with adaptive simulated annealing.
         
@@ -321,7 +321,8 @@ class MCMCSolver:
         print(f"Steps: {num_steps}")
         if simulated_annealing:
             print(f"Initial β: {initial_beta}, Final β: {final_beta}")
-            if adaptive:
+            print(f"Cooling: {cooling}")
+            if cooling == 'adaptive':
                 print(f"Adaptive: Reheat after {reheat_threshold}, Restart after {restart_threshold}")
         else:
             print(f"β: {initial_beta} (Constant)")
@@ -332,6 +333,10 @@ class MCMCSolver:
         start_time = time.time()
         beta = initial_beta
         
+        # For geometric cooling
+        if cooling == 'geometric' and simulated_annealing:
+            cooling_rate = (final_beta / initial_beta) ** (1.0 / num_steps)
+        
         # Print progress every 10% of steps
         print_interval = max(1, num_steps // 1000)
         
@@ -339,10 +344,14 @@ class MCMCSolver:
         
         for step in range(num_steps):
             if simulated_annealing:
-                # Standard annealing schedule
-                scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
-                
-                if adaptive:
+                if cooling == 'linear':
+                    beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
+                elif cooling == 'geometric':
+                    beta = initial_beta * (cooling_rate ** step)
+                elif cooling == 'adaptive':
+                    # Standard annealing schedule base
+                    scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
+                    
                     current_energy = float(energy)
                     if current_energy >= last_energy:
                         stuck_count += 1
@@ -365,7 +374,7 @@ class MCMCSolver:
                     
                     beta = beta + 0.1 * (scheduled_beta - beta)
                 else:
-                    beta = scheduled_beta
+                    raise ValueError(f"Unknown cooling schedule: {cooling}")
             else:
                 beta = initial_beta
             

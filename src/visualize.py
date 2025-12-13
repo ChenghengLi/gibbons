@@ -232,3 +232,34 @@ def plot_energy_history(energy_history, filename=None):
         plt.close()
         return filename
     return plt.gcf()
+
+
+def plot_averaged_energy_history(histories, filename=None):
+    """Plot averaged energy evolution across multiple runs"""
+    # Convert to numpy array if not already
+    histories_arr = np.array(histories)
+    
+    mean_energy = np.mean(histories_arr, axis=0)
+    std_energy = np.std(histories_arr, axis=0)
+    
+    plt.figure(figsize=(10, 6))
+    x = np.arange(len(mean_energy))
+    
+    plt.plot(x, mean_energy, label='Average Energy', color='blue')
+    plt.fill_between(x, mean_energy - std_energy, mean_energy + std_energy, color='blue', alpha=0.2, label='±1 Std Dev')
+    
+    # Also plot individual runs faintly
+    for h in histories:
+        plt.plot(h, color='gray', alpha=0.1, linewidth=0.5)
+        
+    plt.xlabel('Iteration')
+    plt.ylabel('Energy')
+    plt.title(f'Averaged Energy Evolution ({len(histories)} runs)')
+    plt.grid(True)
+    plt.legend()
+    
+    if filename:
+        plt.savefig(filename)
+        plt.close()
+        return filename
+    return plt.gcf()

@@ -1,10 +1,3 @@
-"""
-The file consists in two:
-1) The JIT compiled functions, which are basically various helpers such as checking if two queens attack each other,
-   computing the energy, and running a MCMC step.
-2) The solver class which runs the whole simulation and keeps track of useful info.
-"""
-
 import jax
 import jax.numpy as jnp
 from functools import partial
@@ -160,7 +153,7 @@ class MCMCSolver:
         self.state = board_state
         self.N = board_state.N
     
-    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix):
+    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True):
         """
         Improved MCMC with multiple proposals and better cooling.
         
@@ -174,6 +167,7 @@ class MCMCSolver:
                 - move: Move single queen to random empty cell
                 - swap: Swap positions of two queens
                 - greedy: Move queen with most conflicts
+            simulated_annealing: If False, run with constant initial_beta
         """
         N = self.N
         queens = self.state.queens.astype(jnp.int32)
@@ -195,7 +189,10 @@ class MCMCSolver:
         print("="*60)
         print(f"Board: {N}×{N}×{N} = {N**3} cells, Queens: {N**2}")
         print(f"Steps: {num_steps}, Cooling: {cooling}")
-        print(f"β: {initial_beta} --> {final_beta}")
+        if simulated_annealing:
+            print(f"β: {initial_beta} --> {final_beta}")
+        else:
+            print(f"β: {initial_beta} (Constant)")
         print(f"Proposals: move={move_prob:.0%}, swap={swap_prob:.0%}, greedy={greedy_prob:.0%}")
         print(f"Initial energy: {energy}")
         print("="*60)
@@ -204,7 +201,7 @@ class MCMCSolver:
         beta = initial_beta
         
         # For geometric cooling
-        if cooling == 'geometric':
+        if cooling == 'geometric' and simulated_annealing:
             cooling_rate = (final_beta / initial_beta) ** (1.0 / num_steps)
         
         # Adaptive parameters
@@ -215,45 +212,28 @@ class MCMCSolver:
         print_interval = max(1, num_steps // 10)
         
         for step in range(num_steps):
-            # Update beta based on cooling schedule
-            if cooling == 'linear':
-                beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
-            elif cooling == 'geometric':
-                beta = initial_beta * (cooling_rate ** step)
-            elif cooling == 'adaptive':
-                # Adjust beta based on acceptance rate
-                if len(recent_accepts) >= window_size:
-                    current_rate = sum(recent_accepts[-window_size:]) / window_size
-                    if current_rate > target_accept_rate + 0.1:
-                        beta *= 1.01  # Cool faster
-                    elif current_rate < target_accept_rate - 0.1:
-                        beta *= 0.99  # Heat up
-                    beta = np.clip(beta, initial_beta, final_beta)
-                else:
+            if simulated_annealing:
+                # Update beta based on cooling schedule
+                if cooling == 'linear':
                     beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
-            
-            # Select proposal type
-            # key, subkey = jax.random.split(key)
-            # r = float(jax.random.uniform(subkey))
+                elif cooling == 'geometric':
+                    beta = initial_beta * (cooling_rate ** step)
+                elif cooling == 'adaptive':
+                    # Adjust beta based on acceptance rate
+                    if len(recent_accepts) >= window_size:
+                        current_rate = sum(recent_accepts[-window_size:]) / window_size
+                        if current_rate > target_accept_rate + 0.1:
+                            beta *= 1.01  # Cool faster
+                        elif current_rate < target_accept_rate - 0.1:
+                            beta *= 0.99  # Heat up
+                        beta = np.clip(beta, initial_beta, final_beta)
+                    else:
+                        beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
+            else:
+                beta = initial_beta
             
             state_tuple = (queens, board, energy)
             beta_jnp = jnp.array(beta, dtype=jnp.float32)
-            
-            # if r < move_prob:
-            #     # Standard move proposal
-            #     (queens, board, energy), delta_J, accepted, key = mcmc_step(
-            #         state_tuple, N, key, beta_jnp
-            #     )
-            # elif r < move_prob + swap_prob:
-            #     # Swap proposal
-            #     (queens, board, energy), delta_J, accepted, key = mcmc_step_swap(
-            #         state_tuple, N, key, beta_jnp
-            #     )
-            # else:
-            #     # Greedy move proposal
-            #     (queens, board, energy), delta_J, accepted, key = mcmc_step_greedy_move(
-            #         state_tuple, N, key, beta_jnp
-            #     )
 
             (queens, board, energy), delta_J, accepted, key = mcmc_step(
                 state_tuple, N, key, beta_jnp
@@ -304,7 +284,7 @@ class MCMCSolver:
     
 
         
-    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True):
+    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True):
         """
         Run MCMC with adaptive simulated annealing.
         
@@ -334,10 +314,13 @@ class MCMCSolver:
         print(f"Board size: {self.N}×{self.N}×{self.N} = {self.N**3} cells")
         print(f"Queens: {self.N**2}")
         print(f"Steps: {num_steps}")
-        print(f"Initial β: {initial_beta}, Final β: {final_beta}")
+        if simulated_annealing:
+            print(f"Initial β: {initial_beta}, Final β: {final_beta}")
+            if adaptive:
+                print(f"Adaptive: Reheat after {reheat_threshold}, Restart after {restart_threshold}")
+        else:
+            print(f"β: {initial_beta} (Constant)")
         print(f"Initial energy: {energy}")
-        if adaptive:
-            print(f"Adaptive: Reheat after {reheat_threshold}, Restart after {restart_threshold}")
         print("="*60)
         print("Compiling JIT functions (first run may be slow)...")
         
@@ -348,33 +331,36 @@ class MCMCSolver:
         print_interval = max(1, num_steps // 1000)
         
         for step in range(num_steps):
-            # Standard annealing schedule
-            scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
-            
-            if adaptive:
-                current_energy = float(energy)
-                if current_energy >= last_energy:
-                    stuck_count += 1
+            if simulated_annealing:
+                # Standard annealing schedule
+                scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
+                
+                if adaptive:
+                    current_energy = float(energy)
+                    if current_energy >= last_energy:
+                        stuck_count += 1
+                    else:
+                        stuck_count = 0
+                        last_energy = current_energy
+                    
+                    # Reheat if stuck
+                    if stuck_count > reheat_threshold and stuck_count % reheat_threshold == 0:
+                        beta = max(initial_beta, beta * 0.5)
+                    
+                    # Restart from best if stuck too long
+                    if stuck_count > restart_threshold:
+                        queens = best_queens
+                        board = jnp.zeros((self.N, self.N, self.N), dtype=bool)
+                        board = board.at[queens[:,0], queens[:,1], queens[:,2]].set(True)
+                        energy = jnp.array(best_energy, dtype=jnp.float32)
+                        beta = initial_beta
+                        stuck_count = 0
+                    
+                    beta = beta + 0.1 * (scheduled_beta - beta)
                 else:
-                    stuck_count = 0
-                    last_energy = current_energy
-                
-                # Reheat if stuck
-                if stuck_count > reheat_threshold and stuck_count % reheat_threshold == 0:
-                    beta = max(initial_beta, beta * 0.5)
-                
-                # Restart from best if stuck too long
-                if stuck_count > restart_threshold:
-                    queens = best_queens
-                    board = jnp.zeros((self.N, self.N, self.N), dtype=bool)
-                    board = board.at[queens[:,0], queens[:,1], queens[:,2]].set(True)
-                    energy = jnp.array(best_energy, dtype=jnp.float32)
-                    beta = initial_beta
-                    stuck_count = 0
-                
-                beta = beta + 0.1 * (scheduled_beta - beta)
+                    beta = scheduled_beta
             else:
-                beta = scheduled_beta
+                beta = initial_beta
             
             # JIT-compiled MCMC step
             state_tuple = (queens, board, energy)

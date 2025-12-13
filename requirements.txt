@@ -3,3 +3,4 @@ blackjax
 numpy
 matplotlib
 argparse
+pyyaml

@@ -178,7 +178,7 @@ def visualize_solution(state, filename=None):
     ax.set_zlabel('Z', fontsize=12, fontweight='bold')
     
     # Create informative title
-    status = "✅ SOLVED!" if energy == 0 else f"Energy: {energy:.0f} conflicts"
+    status = "SOLVED!" if energy == 0 else f"Energy: {energy:.0f} conflicts"
     solvable_str = "Solvable" if solvable else "Unsolvable"
     title = f'3D N²-Queens Problem: {N}×{N}×{N} Board\n'
     title += f'{N**2} Queens | {status} | gcd({N},210)={gcd} ({solvable_str})'

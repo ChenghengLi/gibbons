@@ -10,6 +10,14 @@ class BoardState:
     - Board: B_N = {0, 1, ..., N-1}^3
     - Configuration: s = {(i_1,j_1,k_1), ..., (i_{N^2},j_{N^2},k_{N^2})} with |s| = N^2
     - State space: S = {s ⊂ B_N : |s| = N^2}, |S| = C(N^3, N^2)
+
+    self.N
+    self.queen_count
+    self.total_cells
+    self.queens
+    self.board
+    self.line_counts
+    self.energy
     """
     def __init__(self, key, N):
         self.N = N
@@ -28,7 +36,7 @@ class BoardState:
         # Create board (occupancy grid)
         self.board = jnp.zeros((self.N, self.N, self.N), dtype=bool)
         self.board = self.board.at[self.queens[:,0], self.queens[:,1], self.queens[:,2]].set(True)
-        
+
         # Initialize and populate line counts
         self.line_counts = self._create_line_counts()
         self._populate_line_counts()
@@ -111,7 +119,7 @@ class BoardState:
         Note: We cannot simply sum over all line families because
         a pair of queens can attack via multiple types simultaneously
         (e.g., rook-type attack counts on multiple rook lines).
-        
+
         Instead, we count each attacking pair exactly once.
         """
         count = 0
@@ -124,9 +132,9 @@ class BoardState:
     
     def _check_attack(self, q1, q2):
         """
-        Check if two queens attack each other.
+        Check if two queens q1, q2, attack each other.
         
-        Based on Definition 2.2 (Attack Relation):
+        Attack relation:
         - Rook-type: share at least two coordinates
         - Planar diagonal: |i-i'| = |j-j'| != 0 when k=k' (and analogous)
         - Space diagonal: |i-i'| = |j-j'| = |k-k'| != 0
@@ -159,20 +167,3 @@ class BoardState:
             return True
         
         return False
-        
-    def update_line_counts(self, pos, delta):
-        """Update line counts for a position"""
-        sigs = self._get_line_signatures(*pos)
-        for line_type, sig in sigs:
-            if line_type.startswith('rook'):
-                current = self.line_counts[line_type][sig]
-                self.line_counts[line_type] = self.line_counts[line_type].at[sig].set(current + delta)
-            elif line_type.startswith('diag'):
-                idx0 = sig[0]
-                idx1 = sig[1] + (self.N-1)
-                current = self.line_counts[line_type][idx0, idx1]
-                self.line_counts[line_type] = self.line_counts[line_type].at[idx0, idx1].set(current + delta)
-            else:
-                idx = sig + (self.N-1)
-                current = self.line_counts[line_type][idx]
-                self.line_counts[line_type] = self.line_counts[line_type].at[idx].set(current + delta)

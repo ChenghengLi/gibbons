@@ -61,19 +61,30 @@ Based on **Klarner's theorem (1967)**, a zero-energy solution exists if and only
 gcd(N, 210) = 1
 ```
 
-where 210 = 2 × 3 × 5 × 7.
+where $210 = 2 \cdot 3 \cdot 5 \cdot 7$.
+Note that bold entries in the 'Maximum number of non attacking queens' column are those for which the value
+is NOT proven to be maximal. TODO: SOURCE FOR BOTH COLUMNS (THE MAX NUMB I HAVE THE SOURCE) SOURCES BELOW SEEM A BIT RANDOM
 
-| N | gcd(N, 210) | Solvable? | Minimum Energy |
-|---|-------------|-----------|----------------|
-| 1 | 1 | ✅ Yes | 0 |
-| 2 | 2 | ❌ No | 6 |
-| 3 | 3 | ❌ No | 13 |
-| 4 | 2 | ❌ No | ~21 |
-| 5 | 5 | ❌ No | ~35 |
-| 6 | 6 | ❌ No | ~50 |
-| 7 | 7 | ❌ No | ~70 |
-| 11 | 1 | ✅ Yes | 0 |
-| 13 | 1 | ✅ Yes | 0 |
+| N  | gcd(N, 210) | Solvable? | Minimum Energy | Maximum number of non attacking queens |
+|----|-------------|-----------|---------------|----------------------------------------|
+| 1  | 1           | ✅ Yes     | 0             | 0                                      |
+| 2  | 2           | ❌ No      | 6             | 2                                      |
+| 3  | 3           | ❌ No      | 13            | 4                                      |
+| 4  | 2           | ❌ No      | ~21           | 7                                      |
+| 5  | 5           | ❌ No      | ~35           | 13                                     |
+| 6  | 6           | ❌ No      | ~50           | 21                                     |
+| 7  | 7           | ❌ No      | ~70           | 32                                     |
+| 8  | 2           | ❌ No      |               | 48                                     |
+| 9  | 3           | ❌ No      |               | 67                                     |
+| 10 | 10          | ❌ No      |               | 91                                     |
+| 11 | 1           | ✅ Yes     | 0             | 121                                    |
+| 12 | 6           | ❌ No      |               | **133**                                    |
+| 13 | 1           | ✅ Yes     | 0             | 169                                    |
+| 14 | 14          | ❌ No      |               | **172**                                    |
+| 15 | 15          | ❌ No      |               | **199**                                    |
+| 16 | 2           | ❌ No      |               | **241**                                    |
+| 17 | 1           | ✅ Yes     | 0             | 289                                    |
+| 18 | 6           | ❌ No      |               | **307**                                |
 
 **First solvable N > 1**: N = 11, 13, 17, 19, 23, ...
 

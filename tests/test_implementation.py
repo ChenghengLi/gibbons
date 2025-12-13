@@ -1,13 +1,5 @@
 """
 Test suite to verify implementation matches the theoretical specification.
-
-Based on the LaTeX document definitions:
-- Definition 2.1: Board B_N = {0,1,...,N-1}^3
-- Definition 2.2: Attack relations (rook, planar diagonal, space diagonal)
-- Definition 2.3: Configuration s with |s| = N^2
-- Definition 2.4: State space S with |S| = C(N^3, N^2)
-- Definition 2.5: Energy J(s) = number of attacking pairs
-- Algorithm 1: Efficient energy computation using 13 line families
 """
 
 import sys
@@ -98,7 +90,7 @@ def test_example_2_1():
     assert check_attack(center, (0, 0, 1)), "Should attack (0,0,1) via planar diagonal"
     assert check_attack(center, (2, 2, 1)), "Should attack (2,2,1) via planar diagonal"
     
-    print("✅ Example 2.1 (Central Queen) passed")
+    print("Example 2.1 (Central Queen) passed")
 
 
 def test_example_2_2():
@@ -113,7 +105,7 @@ def test_example_2_2():
     q2 = (2, 1, 3)
     
     assert not check_attack(q1, q2), "Queens at (0,0,0) and (2,1,3) should NOT attack"
-    print("✅ Example 2.2 (Non-Attacking Pair) passed")
+    print("Example 2.2 (Non-Attacking Pair) passed")
 
 
 def test_example_2_3():
@@ -124,7 +116,7 @@ def test_example_2_3():
     """
     assert comb(27, 9) == 4686825, "State space size for N=3 should be 4,686,825"
     assert comb(64, 16) == 488526937079580, "State space size for N=4"
-    print("✅ Example 2.3 (State Space Size) passed")
+    print("Example 2.3 (State Space Size) passed")
 
 
 def test_example_2_4():
@@ -147,7 +139,7 @@ def test_example_2_4():
     energy = count_attacking_pairs_naive(queens)
     # All 6 pairs attack each other
     assert energy == 6, f"Energy should be 6, got {energy}"
-    print("✅ Example 2.4 (Energy Calculation) passed - corrected to 6 pairs")
+    print("Example 2.4 (Energy Calculation) passed - corrected to 6 pairs")
 
 
 def test_line_signatures():
@@ -192,7 +184,7 @@ def test_line_signatures():
         assert exp_type == got_type, f"Line type mismatch: {exp_type} vs {got_type}"
         assert exp_sig == got_sig, f"Signature mismatch for {exp_type}: {exp_sig} vs {got_sig}"
     
-    print("✅ Line signatures test passed")
+    print("Line signatures test passed")
 
 
 def test_energy_computation():
@@ -218,7 +210,7 @@ def test_energy_computation():
         assert naive_energy == efficient_energy, \
             f"Energy mismatch: naive={naive_energy}, efficient={efficient_energy}"
     
-    print("✅ Energy computation test passed (naive vs efficient)")
+    print("Energy computation test passed (naive vs efficient)")
 
 
 def test_proposal_symmetry():
@@ -239,7 +231,7 @@ def test_proposal_symmetry():
     assert abs(prob - expected_prob) < 1e-10, \
         f"Proposal probability mismatch: {prob} vs {expected_prob}"
     
-    print("✅ Proposal symmetry test passed")
+    print("Proposal symmetry test passed")
 
 
 def test_acceptance_probability():
@@ -263,7 +255,7 @@ def test_acceptance_probability():
     assert abs(alpha - 0.018315638888734) < 1e-6, \
         f"Acceptance probability should be ≈ 0.018"
     
-    print("✅ Acceptance probability test passed")
+    print("Acceptance probability test passed")
 
 
 def test_board_initialization():
@@ -292,14 +284,13 @@ def test_board_initialization():
         queens_set = set((int(q[0]), int(q[1]), int(q[2])) for q in state.queens)
         assert len(queens_set) == N**2, "Duplicate queen positions found"
     
-    print("✅ Board initialization test passed")
+    print("Board initialization test passed")
 
 
 def run_all_tests():
     """Run all tests"""
     print("\n" + "="*60)
     print("Running Implementation Tests")
-    print("Based on LaTeX Theoretical Specification")
     print("="*60 + "\n")
     
     test_example_2_1()
@@ -313,7 +304,7 @@ def run_all_tests():
     test_board_initialization()
     
     print("\n" + "="*60)
-    print("✅ All tests passed!")
+    print(" All tests passed!")
     print("="*60 + "\n")
 
 

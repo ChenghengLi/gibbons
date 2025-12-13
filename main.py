@@ -50,10 +50,10 @@ def print_solvability_info(info):
     print(f"gcd(N, 210) = gcd({info['N']}, 2×3×5×7) = {info['gcd_210']}")
     
     if info['solvable']:
-        print(f"\n✅ SOLVABLE: N={info['N']} has gcd(N,210)=1")
+        print(f"\nSOLVABLE: N={info['N']} has gcd(N,210)=1")
         print("   A zero-energy solution EXISTS (Klarner's theorem)")
     else:
-        print(f"\n❌ UNSOLVABLE: N={info['N']} is divisible by {info['factors']}")
+        print(f"\nUNSOLVABLE: N={info['N']} is divisible by {info['factors']}")
         print("   No zero-energy solution exists!")
         print("   The algorithm will find the MINIMUM energy configuration.")
     print("="*60 + "\n")
@@ -123,23 +123,23 @@ def main():
         print(f"Replica swaps: {swap_count}")
     
     if float(solution.energy) == 0:
-        print("✅ Valid solution found!")
+        print("Valid solution found!")
     else:
-        print("❌ No zero-energy solution found.")
+        print("No zero-energy solution found.")
     
     # Always visualize the best state found
     sol_file = f'solution_{args.size}x{args.size}x{args.size}.png'
     visualize_solution(solution, sol_file)
-    print(f"\n📊 3D visualization saved as {sol_file}")
+    print(f"\n3D visualization saved as {sol_file}")
     
     # Plot energy history
     energy_file = 'energy_history.png'
     plot_energy_history(energy_history, energy_file)
-    print(f"📈 Energy history saved as {energy_file}")
+    print(f"Energy history saved as {energy_file}")
     
     # Show plots interactively if requested
     if args.show:
-        print("\n🖼️  Displaying plots (close windows to exit)...")
+        print("\nDisplaying plots (close windows to exit)...")
         visualize_solution(solution)
         plot_energy_history(energy_history)
         plt.show()

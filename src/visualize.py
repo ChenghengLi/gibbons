@@ -254,12 +254,20 @@ def plot_averaged_energy_history(histories, filename=None, metadata=None):
     plt.figure(figsize=(10, 7))  # Slightly taller for subtitle
     x = np.arange(len(mean_energy))
     
-    plt.plot(x, mean_energy, label='Average Energy', color='blue')
-    plt.fill_between(x, mean_energy - std_energy, mean_energy + std_energy, color='blue', alpha=0.2, label='±1 Std Dev')
+    # Plot individual runs first (so they are in background)
+    # Generate distinct colors for each run
+    num_runs = len(histories)
+    colors = plt.cm.jet(np.linspace(0, 1, num_runs))
     
-    # Also plot individual runs faintly
-    for h in histories:
-        plt.plot(h, color='gray', alpha=0.1, linewidth=0.5)
+    for i, h in enumerate(histories):
+        plt.plot(h, color=colors[i], alpha=0.3, linewidth=0.8, label=f'_Run {i+1}')
+    
+    # Add a dummy artist for the legend to represent individual runs
+    plt.plot([], [], color='gray', alpha=0.5, linewidth=0.8, label=f'Individual Runs ({num_runs})')
+    
+    # Plot average on top
+    plt.plot(x, mean_energy, label='Average Energy', color='black', linewidth=1.6, zorder=10)
+    plt.fill_between(x, mean_energy - std_energy, mean_energy + std_energy, color='black', alpha=0.1, label='±1 Std Dev', zorder=5)
         
     plt.xlabel('Iteration')
     plt.ylabel('Energy')

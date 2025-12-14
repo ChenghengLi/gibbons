@@ -282,7 +282,7 @@ class MCMCSolver:
             beta_jnp = jnp.array(beta, dtype=jnp.float32)
 
             (queens, board, energy, energy_untreated), delta_J, accepted, key = mcmc_step(
-                state_tuple, N, key, beta_jnp
+                state_tuple, N, key, beta_jnp, energy_treatment=energy_treatment
             )
 
             accepted_count += int(accepted)
@@ -431,7 +431,7 @@ class MCMCSolver:
             # JIT-compiled MCMC step
             state_tuple = (queens, board, energy, energy_untreated)
             (queens, board, energy, energy_untreated), delta_J, accepted, key = mcmc_step(
-                state_tuple, self.N, key, jnp.array(beta, dtype=jnp.float32)
+                state_tuple, self.N, key, jnp.array(beta, dtype=jnp.float32), energy_treatment=energy_treatment
             )
             accepted_count += int(accepted)
             

@@ -5,6 +5,24 @@ from .board import BoardState
 import time
 import numpy as np
 
+# Different energy treatments:
+@jax.jit
+def quadratic_energy_treatment(energy):
+    return energy**2
+
+@jax.jit
+def log_energy_treatment(energy):
+    return jnp.log1p(energy)
+
+@jax.jit
+def log_quadratic_energy_treatment(energy):
+    return jnp.log1p(energy**2)
+
+possible_energy_treatments = {
+    'quadratic': quadratic_energy_treatment,
+    'log': log_energy_treatment,
+    'log_quadratic': log_quadratic_energy_treatment
+}
 
 @jax.jit
 def check_attack_jit(q1, q2):
@@ -52,7 +70,7 @@ def count_attacks_for_position(pos, queens, exclude_idx):
 
 
 @jax.jit
-def compute_delta_energy_jit(queen_idx, old_pos, new_pos, queens):
+def compute_new_energy_jit(queen_idx, old_pos, new_pos, old_score_untreated, queens):
     """
     Compute energy change when moving a queen (JIT-compiled).
 
@@ -64,7 +82,16 @@ def compute_delta_energy_jit(queen_idx, old_pos, new_pos, queens):
     """
     old_attacks = count_attacks_for_position(old_pos, queens, queen_idx)
     new_attacks = count_attacks_for_position(new_pos, queens, queen_idx)
-    return new_attacks - old_attacks
+
+    return old_score_untreated + new_attacks - old_attacks
+
+@jax.jit
+def compute_delta_energy_treated(old_score_untreated, new_score_untreated, energy_treatment=None):
+    if energy_treatment is not None:
+        adjusted_delta = energy_treatment(new_score_untreated) - energy_treatment(old_score_untreated)
+    else:
+        adjusted_delta = new_score_untreated - old_score_untreated
+    return adjusted_delta
 
 
 @jax.jit 
@@ -87,8 +114,9 @@ def compute_total_energy_jit(queens):
     return jnp.sum(pairs)
 
 
-@partial(jax.jit, static_argnums=(1,))
-def mcmc_step(state, N, key, beta):
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step(state, N, key, beta, energy_treatment=None):
     """
     Single MCMC step - fully JIT-compiled.
 
@@ -97,10 +125,11 @@ def mcmc_step(state, N, key, beta):
         N: edge of the 3d cube
         key: for random utils
         beta: temperature
+        energy_treatment: optional function to adjust delta score
     
     Returns: (new_queens, new_board, new_energy, delta_J, accepted, key)
     """
-    queens, board, energy = state
+    queens, board, energy, energy_untreated = state
     
     # Select random queen
     key, subkey = jax.random.split(key)
@@ -115,13 +144,14 @@ def mcmc_step(state, N, key, beta):
     is_occupied = board[new_pos[0], new_pos[1], new_pos[2]]
     
     # Compute delta energy
-    delta_J = compute_delta_energy_jit(queen_idx, old_pos, new_pos, queens)
-    delta_J = jnp.where(is_occupied, 0.0, delta_J.astype(jnp.float32))
+    new_energy_untreated = compute_new_energy_jit(queen_idx, old_pos, new_pos, energy_untreated, queens) # Computes the raw energy without applying to it the function energy treatment
+    delta_J = compute_delta_energy_treated(energy_untreated, new_energy_untreated, energy_treatment=energy_treatment)  # Computes the delta of energy after applying the function energy treatment
+    adjusted_delta_J = jnp.where(is_occupied, 0.0, delta_J.astype(jnp.float32))
     
     # Acceptance probability
     key, subkey = jax.random.split(key)
     u = jax.random.uniform(subkey)
-    accept = (delta_J <= 0) | (u < jnp.exp(-beta * delta_J))
+    accept = (adjusted_delta_J <= 0) | (u < jnp.exp(-beta * adjusted_delta_J))
     accept = accept & ~is_occupied
     
     # Update state conditionally
@@ -136,7 +166,7 @@ def mcmc_step(state, N, key, beta):
     
     new_energy = jnp.where(accept, energy + delta_J, energy)
     
-    return (new_queens, new_board, new_energy), delta_J, accept, key
+    return (new_queens, new_board, new_energy, new_energy_untreated), delta_J, accept, key
 
 
 class MCMCSolver:
@@ -153,7 +183,7 @@ class MCMCSolver:
         self.state = board_state
         self.N = board_state.N
     
-    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True):
+    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True, name_energy_treatment=None):
         """
         Improved MCMC with multiple proposals and better cooling.
         
@@ -172,7 +202,15 @@ class MCMCSolver:
         N = self.N
         queens = self.state.queens.astype(jnp.int32)
         board = self.state.board
-        energy = jnp.array(float(self.state.energy), dtype=jnp.float32)
+        energy_untreated = jnp.array(float(self.state.energy), dtype=jnp.float32)
+
+        #Initial energy treatment
+        if name_energy_treatment is None:
+            energy_treatment = None
+            energy = energy_untreated
+        else:
+            energy_treatment = possible_energy_treatments[name_energy_treatment]
+            energy = energy_treatment(energy_untreated)
 
         # Track best state
         best_queens = queens
@@ -234,10 +272,10 @@ class MCMCSolver:
             else:
                 beta = initial_beta
             
-            state_tuple = (queens, board, energy)
+            state_tuple = (queens, board, energy, energy_untreated)
             beta_jnp = jnp.array(beta, dtype=jnp.float32)
 
-            (queens, board, energy), delta_J, accepted, key = mcmc_step(
+            (queens, board, energy, energy_untreated), delta_J, accepted, key = mcmc_step(
                 state_tuple, N, key, beta_jnp
             )
 
@@ -286,10 +324,8 @@ class MCMCSolver:
         print("="*60)
         
         return self.state, np.array(energy_history), accepted_count / (step + 1)
-    
-
         
-    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True):
+    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True, name_energy_treatment="linear"):
         """
         Run MCMC with adaptive simulated annealing.
         
@@ -298,7 +334,15 @@ class MCMCSolver:
         # Convert state to JIT-friendly format
         queens = self.state.queens.astype(jnp.int32)
         board = self.state.board
-        energy = jnp.array(float(self.state.energy), dtype=jnp.float32)
+        energy_untreated = jnp.array(float(self.state.energy), dtype=jnp.float32)
+
+        #Initial energy treatment
+        if name_energy_treatment == "linear":
+            energy_treatment = None
+            energy = energy_untreated
+        else:
+            energy_treatment = possible_energy_treatments[name_energy_treatment]
+            energy = energy_treatment(energy_untreated)
         
         # Track best state
         best_queens = queens
@@ -370,11 +414,10 @@ class MCMCSolver:
                 beta = initial_beta
             
             # JIT-compiled MCMC step
-            state_tuple = (queens, board, energy)
-            (queens, board, energy), delta_J, accepted, key = mcmc_step(
+            state_tuple = (queens, board, energy, energy_untreated)
+            (queens, board, energy, energy_untreated), delta_J, accepted, key = mcmc_step(
                 state_tuple, self.N, key, jnp.array(beta, dtype=jnp.float32)
             )
-            
             accepted_count += int(accepted)
             
             # Track best

@@ -9,6 +9,7 @@ cooling: geometric # Cooling schedule: linear, geometric, adaptive
 beta_min: 0.1    # Initial/min beta
 beta_max: 50.0   # Final/max beta
 simulated_annealing: true # Enable/disable simulated annealing
+energy_treatment: linear
 
 # Execution Mode
 mode: single     # single or multiple

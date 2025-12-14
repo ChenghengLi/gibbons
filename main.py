@@ -74,7 +74,9 @@ def run_solver(config, seed, size):
     cooling = config['cooling']
     beta_min = config['beta_min']
     beta_max = config['beta_max']
-    simulated_annealing = config.get('simulated_annealing', True)
+    simulated_annealing = config.get('simulated_annealing')
+    complexity = config.get('complexity')
+    energy_reground_interval = config.get('energy_reground_interval', 0)
     
     # Create fresh state and solver for each run to avoid state leakage
     key = jax.random.PRNGKey(seed)
@@ -82,7 +84,7 @@ def run_solver(config, seed, size):
     solver = MCMCSolver(board)
     
     print(f"Running 3D {size}×{size}×{size} Queens with {steps} steps (Seed: {seed})...")
-    print(f"Method: {method}, Cooling: {cooling}, SA: {simulated_annealing}")
+    print(f"Method: {method}, Cooling: {cooling}, SA: {simulated_annealing}, Complexity: {complexity}")
     
     if method == 'basic':
         solution, energy_history, metric = solver.run(
@@ -91,7 +93,9 @@ def run_solver(config, seed, size):
             initial_beta=beta_min,
             final_beta=beta_max,
             cooling=cooling,
-            simulated_annealing=simulated_annealing
+            simulated_annealing=simulated_annealing,
+            complexity=complexity,
+            energy_reground_interval=energy_reground_interval
         )
     elif method == 'improved':
         solution, energy_history, metric = solver.run_improved(
@@ -100,7 +104,9 @@ def run_solver(config, seed, size):
             initial_beta=beta_min,
             final_beta=beta_max,
             cooling=cooling,
-            simulated_annealing=simulated_annealing
+            simulated_annealing=simulated_annealing,
+            complexity=complexity,
+            energy_reground_interval=energy_reground_interval
         )
     else:
         raise ValueError(f"Unknown method: {method}")

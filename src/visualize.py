@@ -235,7 +235,7 @@ def plot_energy_history(energy_history, filename=None):
     return plt.gcf()
 
 
-def visualize_latin_square(state, endangered, filename=None):
+def visualize_latin_square(state, endangered, filename):
     """
     Visualize the 3D Queens solution as a Latin square projection.
     

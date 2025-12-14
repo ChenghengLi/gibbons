@@ -446,14 +446,13 @@ class MCMCSolver:
             # Print progress
             if step % print_interval == 0 or step == num_steps - 1:
                 elapsed = time.time() - start_time
-                rate = (step + 1) / elapsed if elapsed > 0 else 0
                 print(f"Step {step+1:>7}/{num_steps}: "
                       f"E={current_energy:>5.0f}, "
                       f"Best={best_energy:>4.0f}, "
                       f"Acc={accepted_count/(step+1):>5.1%}, "
                       f"β={beta:>6.2f}, "
-                      f"{rate:>6.0f}/s")
-            
+                      f"Time={elapsed:>5.1f}s")
+
             if current_energy == 0 and solution_found_at_step is None:
                 solution_found_at_step = step + 1
                 print(f"\nSOLUTION FOUND at step {step+1}! Continuing run...")
@@ -629,13 +628,11 @@ class MCMCSolver:
             # Print progress
             if step % print_interval == 0 or step == num_steps - 1:
                 elapsed = time.time() - start_time
-                rate = (step + 1) / elapsed if elapsed > 0 else 0
                 print(f"Step {step+1:>6}/{num_steps}: "
                       f"Energy={current_energy:>6.1f}, "
                       f"Best={best_energy:>4.0f}, "
                       f"Accept={accepted_count/(step+1):>5.1%}, "
                       f"β={beta:>5.3f}, "
-                      f"Rate={rate:>6.0f}/s, "
                       f"Time={elapsed:>5.1f}s")
             
             # Check for solution

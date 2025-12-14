@@ -98,7 +98,7 @@ def draw_attack_lines(ax, queens, attacking_pairs):
                 color='red', linewidth=0.8, alpha=0.3, linestyle='--')
 
 
-def visualize_solution(state, filename=None):
+def visualize_solution(state, endangered, filename=None):
     """
     Create enhanced 3D visualization of queen positions.
     
@@ -202,6 +202,7 @@ def visualize_solution(state, filename=None):
     stats_text += f'Queens: {N**2}\n'
     stats_text += f'Density: {N**2/N**3:.1%}\n'
     stats_text += f'Conflicts: {int(energy)}'
+    stats_text += f'Endangered Queens: {endangered}'
     
     ax.text2D(0.02, 0.02, stats_text, transform=ax.transAxes, fontsize=9,
               verticalalignment='bottom', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
@@ -232,6 +233,84 @@ def plot_energy_history(energy_history, filename=None):
         plt.close()
         return filename
     return plt.gcf()
+
+
+def visualize_latin_square(state, endangered, filename=None):
+    """
+    Visualize the 3D Queens solution as a Latin square projection.
+    
+    Shows an N×N grid where each cell displays the k-coordinate (layer)
+    of the queen at that (i,j) position. Empty cells and conflicts are marked.
+    """
+    queens = np.array(state.queens)
+    N = state.N
+    energy = float(state.energy)
+    
+    # Create N×N grid to store k-coordinates
+    grid = np.full((N, N), -1, dtype=int)  # -1 means no queen
+    conflicts = np.zeros((N, N), dtype=bool)
+    
+    # Populate grid
+    for q in queens:
+        i, j, k = int(q[0]), int(q[1]), int(q[2])
+        if grid[i, j] != -1:
+            # Multiple queens at same (i,j) - mark as conflict
+            conflicts[i, j] = True
+        else:
+            grid[i, j] = k
+    
+    fig, ax = plt.subplots(figsize=(10, 10))
+    
+    # Create colormap
+    cmap = plt.cm.viridis
+    
+    # Display grid
+    for i in range(N):
+        for j in range(N):
+            if conflicts[i, j]:
+                # Conflict cell - red
+                ax.add_patch(plt.Rectangle((j, N-1-i), 1, 1, facecolor='red', edgecolor='black', linewidth=1))
+                ax.text(j+0.5, N-1-i+0.5, 'X', ha='center', va='center', fontsize=14, color='white', fontweight='bold')
+            elif grid[i, j] == -1:
+                # Empty cell - light gray
+                ax.add_patch(plt.Rectangle((j, N-1-i), 1, 1, facecolor='lightgray', edgecolor='black', linewidth=1))
+            else:
+                # Queen present - color by k-coordinate
+                k_val = grid[i, j]
+                color = cmap(k_val / (N - 1)) if N > 1 else cmap(0.5)
+                ax.add_patch(plt.Rectangle((j, N-1-i), 1, 1, facecolor=color, edgecolor='black', linewidth=1))
+                ax.text(j+0.5, N-1-i+0.5, str(k_val), ha='center', va='center', fontsize=12, color='white', fontweight='bold')
+    
+    ax.set_xlim(0, N)
+    ax.set_ylim(0, N)
+    ax.set_aspect('equal')
+    ax.set_xticks(np.arange(N))
+    ax.set_yticks(np.arange(N))
+    ax.set_xticklabels(np.arange(N))
+    ax.set_yticklabels(np.arange(N-1, -1, -1))
+    ax.set_xlabel('j (column)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('i (row)', fontsize=12, fontweight='bold')
+    ax.grid(False)
+    
+    # Title
+    status = "SOLVED!" if energy == 0 else f"Energy: {energy:.0f} conflicts"
+    title = f'Latin Square Projection: {N}×{N}×{N} Board\n'
+    title += f'Cell (i,j) shows k-coordinate of queen | {status}'
+    ax.set_title(title, fontsize=13, fontweight='bold')
+    
+    # Add colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=N-1))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, orientation='vertical', pad=0.02, fraction=0.046)
+    cbar.set_label('k (layer)', fontsize=11, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    if filename:
+        plt.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close()
+        return filename
+    return fig
 
 
 def plot_averaged_energy_history(histories, filename=None, metadata=None):

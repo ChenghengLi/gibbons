@@ -1,4 +1,3 @@
-import argparse
 import jax
 import math
 import yaml
@@ -7,6 +6,26 @@ from src.board import BoardState
 from src.solver import MCMCSolver
 from src.visualize import visualize_solution, plot_energy_history, plot_averaged_energy_history, visualize_latin_square
 import matplotlib.pyplot as plt
+
+
+# =============================================================================
+# GLOBAL CONFIGURATION CONSTANTS
+# =============================================================================
+
+# Default Configuration File
+DEFAULT_CONFIG_PATH = 'config_function_search_N11.yaml'
+
+# Expected configuration from config file:
+# - sizes or size: Board size (N)
+# - energy_treatment: List of treatments to test [linear, quadratic, log]
+# - steps: Number of MCMC steps
+# - method: MCMC method (basic/improved)
+# - complexity: hash or iter
+# - simulated_annealing: true/false
+# - beta_min, beta_max: Beta range
+# - cooling: Cooling schedule
+# - mode: single or multiple
+# - num_runs: Number of runs per treatment
 
 
 def check_solvability(N):
@@ -126,14 +145,11 @@ def pad_history(history, target_length):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='3D N² Queens MCMC Solver')
-    parser.add_argument('--config', type=str, default='config.yaml', help='Path to config file')
-    args = parser.parse_args()
-    
+    """Main function to run energy treatment comparison experiments."""
     try:
-        config = load_config(args.config)
+        config = load_config(DEFAULT_CONFIG_PATH)
     except FileNotFoundError:
-        print(f"Error: Config file '{args.config}' not found.")
+        print(f"Error: Config file '{DEFAULT_CONFIG_PATH}' not found.")
         return
     except Exception as e:
         print(f"Error loading config: {e}")
@@ -285,31 +301,68 @@ def main():
     
     if energy_histories_by_treatment:
         comparison_file = f"energy_treatment_comparison_N{size}.png"
-        plot_energy_treatment_comparison(energy_histories_by_treatment, size, comparison_file)
+        plot_energy_treatment_comparison(energy_histories_by_treatment, size, comparison_file, config=config)
         print(f"\nEnergy treatment comparison saved as {comparison_file}")
 
 
-def plot_energy_treatment_comparison(energy_histories_by_treatment, size, filename=None):
+def plot_energy_treatment_comparison(energy_histories_by_treatment, size, filename=None, config=None):
     """Plot mean energy curves for each energy treatment on a single figure."""
     if not energy_histories_by_treatment:
         return None
+    
     max_len = max(len(h) for hs in energy_histories_by_treatment.values() for h in hs)
-    plt.figure(figsize=(10, 6))
-    for treatment, histories in energy_histories_by_treatment.items():
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Use colormap for distinct colors
+    colors = plt.cm.viridis(np.linspace(0.1, 0.9, len(energy_histories_by_treatment)))
+    
+    for idx, (treatment, histories) in enumerate(energy_histories_by_treatment.items()):
         padded = [pad_history(h, max_len) for h in histories]
         mean_curve = np.mean(padded, axis=0)
-        plt.plot(mean_curve, label=f"{treatment}")
-    plt.xlabel('Iteration')
-    plt.ylabel('Energy')
-    plt.title(f'Energy history comparison by energy treatment with N={size}')
-    plt.grid(True, alpha=0.3)
-    plt.legend()
+        std_curve = np.std(padded, axis=0)
+        
+        ax.plot(mean_curve, label=f'{treatment}', color=colors[idx], linewidth=2.5, alpha=0.9)
+        # Optional: add standard deviation shading
+        # ax.fill_between(range(len(mean_curve)), mean_curve - std_curve, 
+        #                  mean_curve + std_curve, alpha=0.15, color=colors[idx])
+    
+    ax.set_xlabel('Iteration', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Energy', fontsize=13, fontweight='bold')
+    
+    num_runs = len(list(energy_histories_by_treatment.values())[0]) if energy_histories_by_treatment else 0
+    ax.set_title(f'Energy Treatment Comparison: Averaged Energy Curves\n' +
+                 f'Board: {size}×{size}×{size} | {num_runs} runs per treatment',
+                 fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='upper right', fontsize=11, framealpha=0.9)
+    
+    # Add metadata box if config provided
+    if config:
+        simulated_annealing = config.get('simulated_annealing', False)
+        beta_info = f"β: {config.get('beta_min', 'N/A')} -> {config.get('beta_max', 'N/A')}" if simulated_annealing else \
+            f"β: {config.get('beta_min', 'N/A')} (Constant)"
+        
+        metadata_text = '\n'.join([
+            f'Board: {size}³ = {size**3:,} cells',
+            f'Steps: {config.get("steps", "N/A"):,}',
+            f'Runs per treatment: {num_runs}',
+            f'Method: {config.get("method", "N/A")}',
+            f'Complexity: {config.get("complexity", "N/A")}',
+            f'SA: {simulated_annealing}',
+            beta_info
+        ])
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+        ax.text(0.02, 0.98, metadata_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment='top', bbox=props)
+    
     plt.tight_layout()
+    
     if filename:
-        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        plt.savefig(filename, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         return filename
-    return plt.gcf()
+    return fig
 
 
 def count_endangered_queens(solution):

@@ -16,12 +16,18 @@ def log_energy_treatment(energy):
 
 @jax.jit
 def log_quadratic_energy_treatment(energy):
-    return jnp.log1p(energy**2)
+    return jnp.log1p(jnp.square(energy))
 
 possible_energy_treatments = {
-    'quadratic': quadratic_energy_treatment,
-    'log': log_energy_treatment,
+    'quadratic': jnp.square,
+    'log': jnp.log1p,
     'log_quadratic': log_quadratic_energy_treatment
+}
+
+inverse_of_energy_treatments = {
+    'quadratic': jnp.sqrt,
+    'log': jnp.expm1,
+    'log_quadratic': lambda x: jnp.sqrt(jnp.expm1(x))
 }
 
 @jax.jit
@@ -183,7 +189,7 @@ class MCMCSolver:
         self.state = board_state
         self.N = board_state.N
     
-    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True, name_energy_treatment=None):
+    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True, name_energy_treatment='linear'):
         """
         Improved MCMC with multiple proposals and better cooling.
         
@@ -205,7 +211,7 @@ class MCMCSolver:
         energy_untreated = jnp.array(float(self.state.energy), dtype=jnp.float32)
 
         #Initial energy treatment
-        if name_energy_treatment is None:
+        if name_energy_treatment == 'linear':
             energy_treatment = None
             energy = energy_untreated
         else:
@@ -214,7 +220,7 @@ class MCMCSolver:
 
         # Track best state
         best_queens = queens
-        best_energy = float(energy)
+        best_energy = float(energy_untreated)
         
         energy_history = [float(energy)]
         accepted_count = 0
@@ -283,7 +289,7 @@ class MCMCSolver:
             recent_accepts.append(int(accepted))
             
             # Track best
-            current_energy = float(energy)
+            current_energy = float(energy_untreated)
             if current_energy < best_energy:
                 best_energy = current_energy
                 best_queens = queens
@@ -325,7 +331,7 @@ class MCMCSolver:
         
         return self.state, np.array(energy_history), accepted_count / (step + 1)
         
-    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True, name_energy_treatment="linear"):
+    def run(self, key, num_steps, initial_beta=0.1, final_beta=10.0, adaptive=True, simulated_annealing=True, name_energy_treatment='linear'):
         """
         Run MCMC with adaptive simulated annealing.
         
@@ -337,7 +343,7 @@ class MCMCSolver:
         energy_untreated = jnp.array(float(self.state.energy), dtype=jnp.float32)
 
         #Initial energy treatment
-        if name_energy_treatment == "linear":
+        if name_energy_treatment == 'linear':
             energy_treatment = None
             energy = energy_untreated
         else:
@@ -346,7 +352,7 @@ class MCMCSolver:
         
         # Track best state
         best_queens = queens
-        best_energy = float(energy)
+        best_energy = float(energy_untreated)
         
         energy_history = [float(energy)]
         accepted_count = 0
@@ -369,7 +375,7 @@ class MCMCSolver:
                 print(f"Adaptive: Reheat after {reheat_threshold}, Restart after {restart_threshold}")
         else:
             print(f"β: {initial_beta} (Constant)")
-        print(f"Initial energy: {energy}")
+        print(f"Initial energy: {energy_untreated}")
         print("="*60)
         print("Compiling JIT functions (first run may be slow)...")
         
@@ -387,7 +393,7 @@ class MCMCSolver:
                 scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
                 
                 if adaptive:
-                    current_energy = float(energy)
+                    current_energy = float(energy_untreated)
                     if current_energy >= last_energy:
                         stuck_count += 1
                     else:
@@ -421,7 +427,7 @@ class MCMCSolver:
             accepted_count += int(accepted)
             
             # Track best
-            current_energy = float(energy)
+            current_energy = float(energy_untreated)
             if current_energy < best_energy:
                 best_energy = current_energy
                 best_queens = queens

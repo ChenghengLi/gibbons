@@ -56,7 +56,7 @@ def print_solvability_info(info):
         print(f"\nSOLVABLE: N={info['N']} has gcd(N,210)=1")
         print("   A zero-energy solution EXISTS (Klarner's theorem)")
     else:
-        print(f"\N={info['N']} is divisible by {info['factors']}")
+        print(f"N={info['N']} is divisible by {info['factors']}")
         print("   No guarantees that the zero-energy solution exists!")
         print("   The algorithm will find the MINIMUM energy configuration.")
     print("="*60 + "\n")
@@ -144,7 +144,10 @@ def main():
     if not isinstance(sizes, list):
         sizes = [sizes]
 
-    mode = config.get('mode', 'single')
+    mode = config.get('mode')
+    if mode not in ('single', 'multiple'):
+        raise ValueError(f"Error: mode = {mode}")
+
     show_plots = config.get('show', False)
     
     for size in sizes:

@@ -180,13 +180,15 @@ def mcmc_step_iter(state, N, key, beta, energy_treatment=None):
     
     # Compute delta energy
     new_energy_untreated = compute_new_energy_jit(queen_idx, old_pos, new_pos, energy_untreated, queens) # Computes the raw energy without applying to it the function energy treatment
-    delta_J = compute_delta_energy_treated(energy_untreated, new_energy_untreated, energy_treatment=energy_treatment)  # Computes the delta of energy after applying the function energy treatment
-    adjusted_delta_J = jnp.where(is_occupied | is_self_move, 0.0, delta_J.astype(jnp.float32))
+    delta_J_treated = compute_delta_energy_treated(energy_untreated, new_energy_untreated, energy_treatment=energy_treatment)  # Computes the delta of energy after applying the function energy treatment
+
+    # If occupied or self-move, force delta_J_treated to 0
+    delta_J_treated = jnp.where(is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
     
     # Acceptance probability
     key, subkey = jax.random.split(key)
     u = jax.random.uniform(subkey)
-    accept_condition = (adjusted_delta_J <= 0) | (u < jnp.exp(-beta * adjusted_delta_J))
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
     
     # Accept self-moves, reject occupied moves
     accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
@@ -281,8 +283,8 @@ def compute_energy_delta_and_update(line_counts, old_pos, new_pos, N):
     return delta_J, new_counts_dict
 
 
-@partial(jax.jit, static_argnums=(1,))
-def mcmc_step_hash(state, N, key, beta):
+@partial(jax.jit, static_argnums=(1,4))
+def mcmc_step_hash(state, N, key, beta, energy_treatment=None):
     """
     Single MCMC step - O(1) complexity using hash-based line counting.
     
@@ -291,8 +293,12 @@ def mcmc_step_hash(state, N, key, beta):
         N: board size
         key: PRNG key
         beta: inverse temperature
+        energy_treatment: optional function to adjust delta score
+
+    Returns:
+        (new_queens, new_board, new_energy, new_energy_untreated, new_line_counts), delta_J, accepted, key
     """
-    queens, board, energy, line_counts = state
+    queens, board, energy, energy_untreated, line_counts = state
     
     # Select random queen
     key, subkey = jax.random.split(key)
@@ -311,14 +317,20 @@ def mcmc_step_hash(state, N, key, beta):
     
     # Compute delta energy and potential new line counts (O(1))
     delta_J, proposed_line_counts = compute_energy_delta_and_update(line_counts, old_pos, new_pos, N)
-    
+
+    #Compute new energy untreated
+    new_energy_untreated = energy_untreated + delta_J
+
+    delta_J_treated = compute_delta_energy_treated(energy_untreated, new_energy_untreated, energy_treatment=energy_treatment)  # Computes the delta of energy after applying the function energy treatment
+
+
     # If occupied or self-move, force delta_J to 0
-    delta_J = jnp.where(is_occupied | is_self_move, 0.0, delta_J.astype(jnp.float32))
+    delta_J_treated = jnp.where(is_occupied | is_self_move, 0.0, delta_J.astype(jnp.float32))
     
     # Acceptance probability
     key, subkey = jax.random.split(key)
     u = jax.random.uniform(subkey)
-    accept_condition = (delta_J <= 0) | (u < jnp.exp(-beta * delta_J))
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
     
     # Accept self-moves, reject occupied moves
     accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
@@ -333,6 +345,7 @@ def mcmc_step_hash(state, N, key, beta):
     )
     
     new_energy = jnp.where(accept, energy + delta_J, energy)
+    new_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
     
     # Update line_counts: if accepted, use proposed, else keep old
     new_line_counts = jax.tree.map(
@@ -341,7 +354,7 @@ def mcmc_step_hash(state, N, key, beta):
         line_counts
     )
     
-    return (new_queens, new_board, new_energy, new_line_counts), delta_J, accept, key
+    return (new_queens, new_board, new_energy, new_energy_untreated, new_line_counts), delta_J, accept, key
 
 
 # -----------------------------------------------------------------------------
@@ -527,7 +540,7 @@ class MCMCSolver:
         best_energy = float(energy_untreated)
         best_line_counts = None
         
-        energy_history = [float(energy)]
+        energy_history = [float(energy_untreated)]
         accepted_count = 0
         
         print("="*60)
@@ -607,9 +620,10 @@ class MCMCSolver:
             recent_accepts.append(int(accepted))
             
             # Track best
-            current_energy = float(energy_untreated)
-            if current_energy < best_energy:
-                best_energy = current_energy
+            current_energy = float(energy)
+            current_energy_untreated = float(energy_untreated)
+            if current_energy_untreated < best_energy:
+                best_energy = current_energy_untreated
                 best_queens = queens
                 if complexity == 'hash':
                     best_line_counts = line_counts
@@ -618,20 +632,20 @@ class MCMCSolver:
             if energy_reground_interval > 0 and step % energy_reground_interval == 0 and step > 0:
                 if complexity == 'hash':
                     recalc_energy = float(calculate_energy_from_counts(line_counts))
-                    if abs(recalc_energy - current_energy) > 0.01:
-                        print(f"\n  WARNING: Energy drift detected at step {step}: {current_energy} -> {recalc_energy}")
+                    if abs(recalc_energy - current_energy_untreated) > 0.01:
+                        print(f"\n  WARNING: Energy drift detected at step {step}: {current_energy_untreated} -> {recalc_energy}")
                     energy = jnp.array(recalc_energy, dtype=jnp.float32)
             
             # Track energy
             if num_steps <= 10000 or step % 100 == 0:
-                energy_history.append(current_energy)
+                energy_history.append(current_energy_untreated)
             
             # Print progress
             if step % print_interval == 0 or step == num_steps - 1:
                 elapsed = time.time() - start_time
                 rate = (step + 1) / elapsed if elapsed > 0 else 0
                 print(f"Step {step+1:>7}/{num_steps}: "
-                      f"E={current_energy:>5.0f}, "
+                      f"E={current_energy_untreated:>5.0f}, "
                       f"Best={best_energy:>4.0f}, "
                       f"Acc={accepted_count/(step+1):>5.1%}, "
                       f"β={beta:>6.2f}, "
@@ -687,7 +701,7 @@ class MCMCSolver:
         best_energy = float(energy_untreated)
         best_line_counts = None
         
-        energy_history = [float(energy)]
+        energy_history = [float(energy_untreated)]
         accepted_count = 0
         
         # Adaptive parameters
@@ -745,12 +759,12 @@ class MCMCSolver:
                     # Standard annealing schedule base
                     scheduled_beta = initial_beta + (final_beta - initial_beta) * (step / num_steps)
                     
-                    current_energy = float(energy_untreated)
-                    if current_energy >= last_energy:
+                    current_energy_untreated = float(energy_untreated)
+                    if current_energy_untreated >= last_energy:
                         stuck_count += 1
                     else:
                         stuck_count = 0
-                        last_energy = current_energy
+                        last_energy = current_energy_untreated
                     
                     # Reheat if stuck
                     if stuck_count > reheat_threshold and stuck_count % reheat_threshold == 0:
@@ -795,9 +809,10 @@ class MCMCSolver:
             accepted_count += int(accepted)
             
             # Track best
-            current_energy = float(energy_untreated)
-            if current_energy < best_energy:
-                best_energy = current_energy
+            current_energy = float(energy)
+            current_energy_untreated = float(energy_untreated)
+            if current_energy_untreated < best_energy:
+                best_energy = current_energy_untreated
                 best_queens = queens
                 if complexity == 'hash':
                     best_line_counts = line_counts
@@ -806,20 +821,20 @@ class MCMCSolver:
             if energy_reground_interval > 0 and step % energy_reground_interval == 0 and step > 0:
                 if complexity == 'hash':
                     recalc_energy = float(calculate_energy_from_counts(line_counts))
-                    if abs(recalc_energy - current_energy) > 0.01:
-                        print(f"\n  WARNING: Energy drift detected at step {step}: {current_energy} -> {recalc_energy}")
+                    if abs(recalc_energy - current_energy_untreated) > 0.01:
+                        print(f"\n  WARNING: Energy drift detected at step {step}: {current_energy_untreated} -> {recalc_energy}")
                     energy = jnp.array(recalc_energy, dtype=jnp.float32)
             
             # Track energy (sample every 100 steps for large runs)
             if num_steps <= 10000 or step % 100 == 0:
-                energy_history.append(current_energy)
+                energy_history.append(current_energy_untreated)
             
             # Print progress
             if step % print_interval == 0 or step == num_steps - 1:
                 elapsed = time.time() - start_time
                 rate = (step + 1) / elapsed if elapsed > 0 else 0
                 print(f"Step {step+1:>6}/{num_steps}: "
-                      f"Energy={current_energy:>6.1f}, "
+                      f"Energy={current_energy_untreated:>6.1f}, "
                       f"Best={best_energy:>4.0f}, "
                       f"Accept={accepted_count/(step+1):>5.1%}, "
                       f"β={beta:>5.3f}, "

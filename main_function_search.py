@@ -67,8 +67,8 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def run_solver(config, seed, size):
-    """Run the solver with parameters from config and specific seed and size."""
+def run_solver(config, seed, size, energy_treatment):
+    """Run the solver with parameters from config and specific seed, size and energy treatment."""
     steps = config['steps']
     method = config['method']
     cooling = config['cooling']
@@ -77,7 +77,6 @@ def run_solver(config, seed, size):
     simulated_annealing = config.get('simulated_annealing')
     complexity = config.get('complexity')
     energy_reground_interval = config.get('energy_reground_interval', 0)
-    energy_treatment = config.get('energy_treatment')
     
     # Create fresh state and solver for each run to avoid state leakage
     key = jax.random.PRNGKey(seed)
@@ -85,7 +84,7 @@ def run_solver(config, seed, size):
     solver = MCMCSolver(board)
     
     print(f"Running 3D {size}×{size}×{size} Queens with {steps} steps (Seed: {seed})...")
-    print(f"Method: {method}, Cooling: {cooling}, SA: {simulated_annealing}, Complexity: {complexity}")
+    print(f"Method: {method}, Cooling: {cooling}, SA: {simulated_annealing}, Complexity: {complexity}, Energy treatment: {energy_treatment}")
     
     if method == 'basic':
         solution, energy_history, metric = solver.run(
@@ -140,27 +139,28 @@ def main():
         print(f"Error loading config: {e}")
         return
 
-    # Handle 'sizes' list or fallback to single 'size'
     sizes = config.get('sizes')
-    if sizes is None:
-        if 'size' in config:
-            sizes = [config['size']]
-        else:
+    size = config.get('size')
+    if size is None:
+        if sizes is None:
             print("Error: No 'sizes' or 'size' specified in config.")
             return
-            
-    if not isinstance(sizes, list):
-        sizes = [sizes]
-
+        size = sizes[0] if isinstance(sizes, list) else sizes
+    energy_treatments = config.get('energy_treatment', 'linear')
+    if not isinstance(energy_treatments, list):
+        energy_treatments = [energy_treatments]
+    
     mode = config.get('mode')
     if mode not in ('single', 'multiple'):
         raise ValueError(f"Error: mode = {mode}")
 
     show_plots = config.get('show')
     
-    for size in sizes:
+    energy_histories_by_treatment = {}
+    
+    for energy_treatment in energy_treatments:
         print("\n" + "="*80)
-        print(f"STARTING RUNS FOR BOARD SIZE N={size}")
+        print(f"STARTING RUNS FOR ENERGY TREATMENT '{energy_treatment}' (N={size})")
         print("="*80 + "\n")
         
         # Check solvability first
@@ -169,7 +169,7 @@ def main():
         
         if mode == 'single':
             base_seed = config.get('seed')
-            solution, energy_history, metric = run_solver(config, base_seed, size)
+            solution, energy_history, metric = run_solver(config, base_seed, size, energy_treatment)
 
             endangered = count_endangered_queens(solution)
             print(f"Endangered Queens: {endangered}")
@@ -184,17 +184,19 @@ def main():
                 print("No zero-energy solution found.")
                 
             # Visualize
-            sol_file = f"solution_N{size}_seed{base_seed}.png"
+            sol_file = f"solution_N{size}_seed{base_seed}_energy-{energy_treatment}.png"
             visualize_solution(solution, endangered, sol_file)
             print(f"\n3D visualization saved as {sol_file}")
             
-            latin_file = f"latin_square_N{size}_seed{base_seed}.png"
+            latin_file = f"latin_square_N{size}_seed{base_seed}_energy-{energy_treatment}.png"
             visualize_latin_square(solution, endangered, latin_file)
             print(f"Latin square visualization saved as {latin_file}")
             
-            energy_file = f"energy_history_N{size}_seed{base_seed}.png"
+            energy_file = f"energy_history_N{size}_seed{base_seed}_energy-{energy_treatment}.png"
             plot_energy_history(energy_history, energy_file)
             print(f"Energy history saved as {energy_file}")
+            
+            energy_histories_by_treatment[energy_treatment] = [energy_history]
             
             if show_plots:
                 print("\nDisplaying plots (close windows to exit)...")
@@ -205,7 +207,7 @@ def main():
                 
         elif mode == 'multiple':
             num_runs = config.get('num_runs')
-            print(f"Executing {num_runs} runs in '{mode}' mode for N={size}...")
+            print(f"Executing {num_runs} runs in '{mode}' mode for N={size} and energy treatment '{energy_treatment}'...")
             
             # Simple incremental seed generation
             base_seed = config.get('seed', 42)
@@ -217,7 +219,7 @@ def main():
             
             for i, seed in enumerate(seeds):
                 print(f"\n--- Run {i+1}/{num_runs} (N={size}) ---")
-                solution, energy_history, metric = run_solver(config, seed, size)
+                solution, energy_history, metric = run_solver(config, seed, size, energy_treatment)
                 
                 histories.append(energy_history)
                 final_energies.append(float(solution.energy))
@@ -228,6 +230,7 @@ def main():
             # Determine max length for padding
             max_len = max(len(h) for h in histories)
             padded_histories = [pad_history(h, max_len) for h in histories]
+            energy_histories_by_treatment[energy_treatment] = padded_histories
             
             # Statistics
             avg_energy = np.mean(final_energies)
@@ -251,12 +254,12 @@ def main():
                 'steps': config['steps'],
                 'cooling_method': config['cooling'] if simulated_annealing else 'None',
                 'board_size': size,
-                'energy_treatment': config.get('energy_treatment'),
+                'energy_treatment': energy_treatment,
                 'final_energy': avg_energy
             }
             
             # Visualize Averaged Energy
-            avg_energy_file = f"averaged_energy_history_N{size}.png"
+            avg_energy_file = f"averaged_energy_history_N{size}_energy-{energy_treatment}.png"
             plot_averaged_energy_history(padded_histories, avg_energy_file, metadata=metadata)
             print(f"\nAveraged energy history saved as {avg_energy_file}")
             
@@ -265,11 +268,11 @@ def main():
             best_solution = solutions[best_idx]
             endangered = count_endangered_queens(best_solution)
             print(f"Endangered Queens: {endangered}")
-            best_sol_file = f"best_solution_N{size}.png"
+            best_sol_file = f"best_solution_N{size}_energy-{energy_treatment}.png"
             visualize_solution(best_solution, endangered, best_sol_file)
             print(f"Best solution visualization saved as {best_sol_file}")
             
-            best_latin_file = f"best_latin_square_N{size}.png"
+            best_latin_file = f"best_latin_square_N{size}_energy-{energy_treatment}.png"
             visualize_latin_square(best_solution, endangered, best_latin_file)
             print(f"Best Latin square visualization saved as {best_latin_file}")
             
@@ -279,6 +282,34 @@ def main():
                 visualize_solution(best_solution, endangered, best_sol_file)
                 visualize_latin_square(best_solution, endangered, best_latin_file)
                 plt.show()
+    
+    if energy_histories_by_treatment:
+        comparison_file = f"energy_treatment_comparison_N{size}.png"
+        plot_energy_treatment_comparison(energy_histories_by_treatment, size, comparison_file)
+        print(f"\nEnergy treatment comparison saved as {comparison_file}")
+
+
+def plot_energy_treatment_comparison(energy_histories_by_treatment, size, filename=None):
+    """Plot mean energy curves for each energy treatment on a single figure."""
+    if not energy_histories_by_treatment:
+        return None
+    max_len = max(len(h) for hs in energy_histories_by_treatment.values() for h in hs)
+    plt.figure(figsize=(10, 6))
+    for treatment, histories in energy_histories_by_treatment.items():
+        padded = [pad_history(h, max_len) for h in histories]
+        mean_curve = np.mean(padded, axis=0)
+        plt.plot(mean_curve, label=f"{treatment}")
+    plt.xlabel('Iteration')
+    plt.ylabel('Energy')
+    plt.title(f'Energy history comparison by energy treatment with N={size}')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    if filename:
+        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        plt.close()
+        return filename
+    return plt.gcf()
 
 
 def count_endangered_queens(solution):

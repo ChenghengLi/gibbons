@@ -23,12 +23,12 @@ import math
 BOARD_SIZE = 11
 
 # Optimization Configuration
-BETA_VALUES = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0,10.0, 50.0]  # Log-spaced beta values
-NUM_RUNS_PER_BETA = 5
+BETA_VALUES = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]  # Log-spaced beta values 0.01, 0.05, 0.1, 0.5, 1.0, 5.0,10.0, 50.0
+NUM_RUNS_PER_BETA = 3
 BASE_SEED = 42
 
 # MCMC Configuration
-STEPS = 1_000_000
+STEPS = 2_000_000
 METHOD = 'basic'
 COMPLEXITY = 'iter'
 ENERGY_REGROUND_INTERVAL = 100000000
@@ -36,7 +36,7 @@ ENERGY_TREATMENT = 'linear'
 
 # Simulated Annealing (disabled for constant beta)
 SIMULATED_ANNEALING = False
-COOLING = 'geometric'  # Ignored when SA is disabled
+COOLING = 'linear'  # Ignored when SA is disabled
 
 
 # =============================================================================

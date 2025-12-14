@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
-from .board import BoardState
 import time
 import numpy as np
 

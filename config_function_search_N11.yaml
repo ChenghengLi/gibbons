@@ -5,7 +5,7 @@ sizes: 11       # List of Board sizes (N) to run
 steps: 4000000     # Number of MCMC steps
 seed: 42         # Random seed (for single run or base seed)  default=42
 method: basic    # MCMC method: basic, improved
-cooling: geometric # Cooling schedule: linear, geometric, adaptive
+cooling: linear # Cooling schedule: linear, geometric, adaptive
 beta_min: 0.01    # Initial/min beta
 beta_max: 5.0   # Final/max beta
 simulated_annealing: true # Enable/disable simulated annealing
@@ -15,7 +15,7 @@ energy_reground_interval: 10000000 # Steps between energy recalculations (0 to d
 
 # Execution Mode
 mode: multiple     # single or multiple
-num_runs: 5      # Number of runs if mode is multiple
+num_runs: 3      # Number of runs if mode is multiple
 
 # Visualization
 show: false      # Show plots interactively

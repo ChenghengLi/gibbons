@@ -1,21 +1,21 @@
 # Board Configuration
-sizes: [11]       # List of Board sizes (N) to run
+sizes: [13]       # List of Board sizes (N) to run
 
 # Solver Configuration
 steps: 4000000     # Number of MCMC steps
 seed: 42         # Random seed (for single run or base seed)  default=42
 method: basic    # MCMC method: basic, improved
-cooling: linear # Cooling schedule: linear, geometric, adaptive
-beta_min: 0.01    # Initial/min beta
-beta_max: 5.0   # Final/max beta
+cooling: geometric # Cooling schedule: linear, geometric, adaptive
+beta_min: 1.0    # Initial/min beta
+beta_max: 10.0  # Final/max beta
 simulated_annealing: true # Enable/disable simulated annealing
 energy_treatment: linear #Possible options: linear, quadratic, log, log_quadratic
 complexity: iter # Complexity: hash (O(1)) or iter (O(N²))
 energy_reground_interval: 10000000 # Steps between energy recalculations (0 to disable)
 
 # Execution Mode
-mode: single     # single or multiple
-num_runs: 10      # Number of runs if mode is multiple
+mode: multiple     # single or multiple
+num_runs: 3      # Number of runs if mode is multiple
 
 # Visualization
 show: false      # Show plots interactively

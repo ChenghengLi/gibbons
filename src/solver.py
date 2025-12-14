@@ -298,7 +298,7 @@ def mcmc_step_hash(state, N, key, beta):
     new_energy = jnp.where(accept, energy + delta_J, energy)
     
     # Update line_counts: if accepted, use proposed, else keep old
-    new_line_counts = jax.tree_map(
+    new_line_counts = jax.tree.map(
         lambda p, o: jnp.where(accept, p, o),
         proposed_line_counts,
         line_counts
@@ -541,7 +541,7 @@ class MCMCSolver:
         # Select mcmc_step function based on complexity
         if complexity == 'hash':
             mcmc_step_fn = mcmc_step_hash
-            line_counts = initialize_line_counts(queens, N)
+            line_counts = initialize_line_counts(queens, board.size)
         else:
             mcmc_step_fn = mcmc_step_iter
             line_counts = None

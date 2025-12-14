@@ -171,6 +171,7 @@ def mcmc_step(state, N, key, beta, energy_treatment=None):
     )
     
     new_energy = jnp.where(accept, energy + delta_J, energy)
+    new_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
     
     return (new_queens, new_board, new_energy, new_energy_untreated), delta_J, accept, key
 

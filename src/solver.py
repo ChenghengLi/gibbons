@@ -203,10 +203,10 @@ def mcmc_step_iter(state, N, key, beta, energy_treatment=None):
         board
     )
     
-    new_energy = jnp.where(accept, energy + delta_J, energy)
+    new_energy = jnp.where(accept, energy + delta_J_treated, energy)
     new_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
     
-    return (new_queens, new_board, new_energy, new_energy_untreated), delta_J, accept, key
+    return (new_queens, new_board, new_energy, new_energy_untreated), delta_J_treated, accept, key
 
 
 # -----------------------------------------------------------------------------
@@ -354,7 +354,8 @@ def mcmc_step_hash(state, N, key, beta, energy_treatment=None):
         line_counts
     )
     
-    return (new_queens, new_board, new_energy, new_energy_untreated, new_line_counts), delta_J, accept, key
+    delta_J_untreated = new_energy_untreated - energy_untreated
+    return (new_queens, new_board, new_energy, new_energy_untreated, new_line_counts), delta_J_untreated, accept, key
 
 
 # -----------------------------------------------------------------------------

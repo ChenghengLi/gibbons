@@ -277,9 +277,8 @@ def main():
                 visualize_solution(best_solution)
                 visualize_latin_square(best_solution)
                 plt.show()
-
-    else:
-        print(f"Error: Unknown mode '{mode}' in config. Use 'single' or 'multiple'.")
+        else:
+            print(f"Error: Unknown mode '{mode}' in config. Use 'single' or 'multiple'.")
 
 
 def count_endangered_queens(solution):

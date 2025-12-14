@@ -1,12 +1,9 @@
-name: markov-queens
-channels:
-  - conda-forge
-  - defaults
 dependencies:
   - python=3.11
   - pip
   - numpy=1.26.4
   - matplotlib
+  - pyyaml
   - pip:
     - jax[cpu]
     - blackjax

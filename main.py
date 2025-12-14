@@ -75,6 +75,7 @@ def run_solver(config, seed, size):
     beta_min = config['beta_min']
     beta_max = config['beta_max']
     simulated_annealing = config.get('simulated_annealing', True)
+    energy_treatment = config.get('energy_treatment')
     
     # Create fresh state and solver for each run to avoid state leakage
     key = jax.random.PRNGKey(seed)
@@ -91,7 +92,8 @@ def run_solver(config, seed, size):
             initial_beta=beta_min,
             final_beta=beta_max,
             cooling=cooling,
-            simulated_annealing=simulated_annealing
+            simulated_annealing=simulated_annealing,
+            name_energy_treatment=energy_treatment
         )
     elif method == 'improved':
         solution, energy_history, metric = solver.run_improved(
@@ -101,7 +103,8 @@ def run_solver(config, seed, size):
             final_beta=beta_max,
             cooling=cooling,
             proposal_mix=(0.5, 0.3, 0.2),  # move, swap, greedy
-            simulated_annealing=simulated_annealing
+            simulated_annealing=simulated_annealing,
+            name_energy_treatment=energy_treatment
         )
     else:
         raise ValueError(f"Unknown method: {method}")

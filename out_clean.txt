@@ -1,0 +1,61 @@
+
+================================================================================
+STARTING RUNS FOR BOARD SIZE N=5
+================================================================================
+
+============================================================
+PROBLEM SOLVABILITY CHECK
+============================================================
+Board size N = 5
+Queens: 25, Cells: 125, Density: 20.0%
+gcd(N, 210) = gcd(5, 2×3×5×7) = 5
+N=5 is divisible by [5]
+   No guarantees that the zero-energy solution exists!
+   The algorithm will find the MINIMUM energy configuration.
+============================================================
+
+Running 3D 5×5×5 Queens with 400000 steps (Seed: 42)...
+Method: basic, Cooling: linear, SA: True, Complexity: iter
+============================================================
+3D Queens MCMC Solver (N=5) - JIT Optimized
+============================================================
+Board size: 5×5×5 = 125 cells
+Queens: 25
+Steps: 400000, Complexity: iter
+Initial β: 0.01, Final β: 5.0
+Cooling: linear
+Initial energy: 73.0
+Energy regrounding every 10000000 steps
+============================================================
+Compiling JIT functions (first run may be slow)...
+Step      1/400000: Energy=  73.0, Best=  73, Accept= 0.0%, β=0.010, Time=  0.4s
+Step  20001/400000: Energy=  72.0, Best=  53, Accept=68.9%, β=0.260, Time=  2.6s
+Step  40001/400000: Energy=  68.0, Best=  49, Accept=60.4%, β=0.509, Time=  4.7s
+Step  60001/400000: Energy=  60.0, Best=  47, Accept=53.5%, β=0.759, Time=  7.1s
+Step  80001/400000: Energy=  49.0, Best=  42, Accept=47.0%, β=1.008, Time=  9.4s
+Step 100001/400000: Energy=  50.0, Best=  40, Accept=41.8%, β=1.258, Time= 11.7s
+Step 120001/400000: Energy=  45.0, Best=  38, Accept=37.4%, β=1.507, Time= 13.9s
+Step 140001/400000: Energy=  45.0, Best=  38, Accept=33.7%, β=1.756, Time= 16.0s
+Step 160001/400000: Energy=  41.0, Best=  33, Accept=30.3%, β=2.006, Time= 18.2s
+Step 180001/400000: Energy=  41.0, Best=  33, Accept=27.6%, β=2.256, Time= 20.4s
+Step 200001/400000: Energy=  34.0, Best=  33, Accept=25.2%, β=2.505, Time= 22.6s
+Step 220001/400000: Energy=  39.0, Best=  33, Accept=23.2%, β=2.755, Time= 24.9s
+Step 240001/400000: Energy=  33.0, Best=  32, Accept=21.5%, β=3.004, Time= 27.2s
+Step 260001/400000: Energy=  32.0, Best=  32, Accept=20.0%, β=3.253, Time= 29.5s
+Step 280001/400000: Energy=  33.0, Best=  32, Accept=18.7%, β=3.503, Time= 31.6s
+Step 300001/400000: Energy=  32.0, Best=  32, Accept=17.5%, β=3.752, Time= 34.2s
+Step 320001/400000: Energy=  33.0, Best=  32, Accept=16.5%, β=4.002, Time= 36.5s
+Step 340001/400000: Energy=  33.0, Best=  32, Accept=15.6%, β=4.252, Time= 38.8s
+Step 360001/400000: Energy=  33.0, Best=  32, Accept=14.8%, β=4.501, Time= 41.3s
+Step 380001/400000: Energy=  32.0, Best=  32, Accept=14.1%, β=4.750, Time= 43.8s
+Step 400000/400000: Energy=  32.0, Best=  32, Accept=13.4%, β=5.000, Time= 46.1s
+Endangered Queens: 25
+
+Results:
+Final energy: 32.0
+Acceptance rate: 13.44%
+No zero-energy solution found.
+
+3D visualization saved as solution_N5_seed42.png
+Latin square visualization saved as latin_square_N5_seed42.png
+Energy history saved as energy_history_N5_seed42.png

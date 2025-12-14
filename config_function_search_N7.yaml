@@ -2,7 +2,7 @@
 sizes: 7       # List of Board sizes (N) to run
 
 # Solver Configuration
-steps: 1500000     # Number of MCMC steps
+steps: 2500000     # Number of MCMC steps
 seed: 42         # Random seed (for single run or base seed)  default=42
 method: basic    # MCMC method: basic, improved
 cooling: geometric # Cooling schedule: linear, geometric, adaptive

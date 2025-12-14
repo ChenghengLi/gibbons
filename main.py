@@ -77,6 +77,7 @@ def run_solver(config, seed, size):
     simulated_annealing = config.get('simulated_annealing')
     complexity = config.get('complexity')
     energy_reground_interval = config.get('energy_reground_interval', 0)
+    energy_treatment = config.get('energy_treatment')
     
     # Create fresh state and solver for each run to avoid state leakage
     key = jax.random.PRNGKey(seed)
@@ -95,7 +96,8 @@ def run_solver(config, seed, size):
             cooling=cooling,
             simulated_annealing=simulated_annealing,
             complexity=complexity,
-            energy_reground_interval=energy_reground_interval
+            energy_reground_interval=energy_reground_interval,
+            name_energy_treatment=energy_treatment
         )
     elif method == 'improved':
         solution, energy_history, metric = solver.run_improved(
@@ -106,7 +108,8 @@ def run_solver(config, seed, size):
             cooling=cooling,
             simulated_annealing=simulated_annealing,
             complexity=complexity,
-            energy_reground_interval=energy_reground_interval
+            energy_reground_interval=energy_reground_interval,
+            name_energy_treatment=energy_treatment
         )
     else:
         raise ValueError(f"Unknown method: {method}")

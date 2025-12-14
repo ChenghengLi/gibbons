@@ -5,7 +5,7 @@ import yaml
 import numpy as np
 from src.board import BoardState
 from src.solver import MCMCSolver
-from src.visualize import visualize_solution, plot_energy_history, plot_averaged_energy_history
+from src.visualize import visualize_solution, plot_energy_history, plot_averaged_energy_history, visualize_latin_square
 import matplotlib.pyplot as plt
 
 
@@ -167,6 +167,9 @@ def main():
         if mode == 'single':
             base_seed = config.get('seed', 42)
             solution, energy_history, metric = run_solver(config, base_seed, size)
+
+            endangered = count_endangered_queens(solution)
+            print(f"Endangered Queens: {endangered}")
             
             print("\nResults:")
             print(f"Final energy: {solution.energy}")
@@ -182,13 +185,18 @@ def main():
             visualize_solution(solution, sol_file)
             print(f"\n3D visualization saved as {sol_file}")
             
+            latin_file = f"latin_square_N{size}_seed{base_seed}.png"
+            visualize_latin_square(solution, latin_file)
+            print(f"Latin square visualization saved as {latin_file}")
+            
             energy_file = f"energy_history_N{size}_seed{base_seed}.png"
             plot_energy_history(energy_history, energy_file)
             print(f"Energy history saved as {energy_file}")
             
             if show_plots:
                 print("\nDisplaying plots (close windows to exit)...")
-                visualize_solution(solution)
+                visualize_solution(solution, endangered)
+                visualize_latin_square(solution, endangered)
                 plot_energy_history(energy_history)
                 plt.show()
                 
@@ -250,18 +258,82 @@ def main():
             # Visualize Best Solution
             best_idx = np.argmin(final_energies)
             best_solution = solutions[best_idx]
+            endangered = count_endangered_queens(best_solution)
+            print(f"Endangered Queens: {endangered}")
             best_sol_file = f"best_solution_N{size}.png"
             visualize_solution(best_solution, best_sol_file)
             print(f"Best solution visualization saved as {best_sol_file}")
+            
+            best_latin_file = f"best_latin_square_N{size}.png"
+            visualize_latin_square(best_solution, best_latin_file)
+            print(f"Best Latin square visualization saved as {best_latin_file}")
             
             if show_plots:
                 print("\nDisplaying plots (close windows to exit)...")
                 plot_averaged_energy_history(padded_histories, metadata=metadata)
                 visualize_solution(best_solution)
+                visualize_latin_square(best_solution)
                 plt.show()
 
     else:
         print(f"Error: Unknown mode '{mode}' in config. Use 'single' or 'multiple'.")
+
+
+def count_endangered_queens(solution):
+    """
+    Calculates the number of queens that are under attack by at least one other queen.
+    Unlike 'energy' (which counts pairs), this counts specific queens.
+    """
+    # Convert JAX array to numpy for standard iteration
+    queens = np.array(solution.queens)
+    num_queens = len(queens)
+    endangered_count = 0
+
+    for i in range(num_queens):
+        q1 = queens[i]
+        is_endangered = False
+        
+        for j in range(num_queens):
+            if i == j: 
+                continue
+            
+            q2 = queens[j]
+            
+            # --- Attack Logic (Same as BoardState) ---
+            # Calculate absolute differences
+            delta = np.abs(q1 - q2)
+            d_i, d_j, d_k = delta[0], delta[1], delta[2]
+            
+            # 1. Rook-type: share at least two coordinates
+            # Sum of boolean matches (i==i) + (j==j) + (k==k)
+            matches = np.sum(q1 == q2)
+            if matches >= 2:
+                is_endangered = True
+                break
+            
+            # 2. Planar diagonals (share 1 coord, diff of others is equal)
+            # xy-plane (k is same)
+            if q1[2] == q2[2] and d_i == d_j:
+                is_endangered = True
+                break
+            # xz-plane (j is same)
+            if q1[1] == q2[1] and d_i == d_k:
+                is_endangered = True
+                break
+            # yz-plane (i is same)
+            if q1[0] == q2[0] and d_j == d_k:
+                is_endangered = True
+                break
+
+            # 3. Space diagonal (all 3 diffs equal)
+            if d_i == d_j == d_k:
+                is_endangered = True
+                break
+        
+        if is_endangered:
+            endangered_count += 1
+            
+    return endangered_count
 
 if __name__ == "__main__":
     main()

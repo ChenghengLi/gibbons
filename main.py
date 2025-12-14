@@ -156,7 +156,7 @@ def main():
     if mode not in ('single', 'multiple'):
         raise ValueError(f"Error: mode = {mode}")
 
-    show_plots = config.get('show', False)
+    show_plots = config.get('show')
     
     for size in sizes:
         print("\n" + "="*80)
@@ -168,7 +168,7 @@ def main():
         print_solvability_info(solvability)
         
         if mode == 'single':
-            base_seed = config.get('seed', 42)
+            base_seed = config.get('seed')
             solution, energy_history, metric = run_solver(config, base_seed, size)
 
             endangered = count_endangered_queens(solution)
@@ -185,11 +185,11 @@ def main():
                 
             # Visualize
             sol_file = f"solution_N{size}_seed{base_seed}.png"
-            visualize_solution(solution, sol_file)
+            visualize_solution(solution, endangered, sol_file)
             print(f"\n3D visualization saved as {sol_file}")
             
             latin_file = f"latin_square_N{size}_seed{base_seed}.png"
-            visualize_latin_square(solution, latin_file)
+            visualize_latin_square(solution, endangered, latin_file)
             print(f"Latin square visualization saved as {latin_file}")
             
             energy_file = f"energy_history_N{size}_seed{base_seed}.png"
@@ -198,13 +198,13 @@ def main():
             
             if show_plots:
                 print("\nDisplaying plots (close windows to exit)...")
-                visualize_solution(solution, endangered)
-                visualize_latin_square(solution, endangered)
+                visualize_solution(solution, endangered, sol_file)
+                visualize_latin_square(solution, endangered, latin_file)
                 plot_energy_history(energy_history)
                 plt.show()
                 
         elif mode == 'multiple':
-            num_runs = config.get('num_runs', 5)
+            num_runs = config.get('num_runs')
             print(f"Executing {num_runs} runs in '{mode}' mode for N={size}...")
             
             # Simple incremental seed generation
@@ -242,8 +242,9 @@ def main():
             print(f"Success Rate: {success_rate:.1%}")
             
             # Prepare metadata for plot
-            simulated_annealing = config.get('simulated_annealing', True)
-            beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else f"{config['beta_min']} (Constant)"
+            simulated_annealing = config.get('simulated_annealing')
+            beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else \
+                f"{config['beta_min']} (Constant)"
             
             metadata = {
                 'beta_range': beta_range,
@@ -264,21 +265,19 @@ def main():
             endangered = count_endangered_queens(best_solution)
             print(f"Endangered Queens: {endangered}")
             best_sol_file = f"best_solution_N{size}.png"
-            visualize_solution(best_solution, best_sol_file)
+            visualize_solution(best_solution, endangered, best_sol_file)
             print(f"Best solution visualization saved as {best_sol_file}")
             
             best_latin_file = f"best_latin_square_N{size}.png"
-            visualize_latin_square(best_solution, best_latin_file)
+            visualize_latin_square(best_solution, endangered, best_latin_file)
             print(f"Best Latin square visualization saved as {best_latin_file}")
             
             if show_plots:
                 print("\nDisplaying plots (close windows to exit)...")
                 plot_averaged_energy_history(padded_histories, metadata=metadata)
-                visualize_solution(best_solution)
-                visualize_latin_square(best_solution)
+                visualize_solution(best_solution, endangered, best_sol_file)
+                visualize_latin_square(best_solution, endangered, best_latin_file)
                 plt.show()
-        else:
-            print(f"Error: Unknown mode '{mode}' in config. Use 'single' or 'multiple'.")
 
 
 def count_endangered_queens(solution):

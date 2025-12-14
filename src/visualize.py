@@ -322,6 +322,7 @@ def plot_averaged_energy_history(histories, filename=None, metadata=None):
     - steps: int
     - cooling_method: str
     - board_size: int
+    - energy_treatment: str
     - final_energy: float (average)
     """
     # Convert to numpy array if not already
@@ -365,6 +366,7 @@ def plot_averaged_energy_history(histories, filename=None, metadata=None):
         textstr = '\n'.join((
             f"Board Size: {metadata['board_size']}x{metadata['board_size']}x{metadata['board_size']}",
             f"Steps: {metadata['steps']}",
+            f"Energy Treatment: {metadata['energy_treatment']}",
             f"Cooling: {metadata['cooling_method']}",
             f"Beta: {metadata['beta_range']}",
             f"Avg Final Energy: {metadata['final_energy']:.2f}"

@@ -137,7 +137,7 @@ def compute_new_energy_jit(queen_idx, old_pos, new_pos, old_score_untreated, que
 
     return old_score_untreated + new_attacks - old_attacks
 
-@jax.jit
+@partial(jax.jit, static_argnums=(2))
 def compute_delta_energy_treated(old_score_untreated, new_score_untreated, energy_treatment=None):
     if energy_treatment is not None:
         adjusted_delta = energy_treatment(new_score_untreated) - energy_treatment(old_score_untreated)

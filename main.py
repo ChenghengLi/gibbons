@@ -100,7 +100,6 @@ def run_solver(config, seed, size):
             initial_beta=beta_min,
             final_beta=beta_max,
             cooling=cooling,
-            proposal_mix=(0.5, 0.3, 0.2),  # move, swap, greedy
             simulated_annealing=simulated_annealing
         )
     else:

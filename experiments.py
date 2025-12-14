@@ -34,13 +34,9 @@ def run_single_experiment(N, num_steps, method='improved', cooling='geometric',
     elif method == 'improved':
         solution, energy_history, acc = solver.run_improved(
             key, num_steps, initial_beta=beta_min, final_beta=beta_max,
-            cooling=cooling, proposal_mix=(0.5, 0.3, 0.2)
-        )
-    elif method == 'parallel':
-        solution, energy_history, swaps = solver.run_parallel_tempering(
-            key, num_steps, num_replicas=8, beta_min=beta_min, beta_max=beta_max
-        )
-        acc = swaps
+            cooling=cooling)
+    else:
+        raise ValueError("")
     
     elapsed = time.time() - start
     final_energy = float(solution.energy)
@@ -284,7 +280,7 @@ def experiment_4_identify_special_N(N_values=range(2, 16), num_steps=50000, num_
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor='green', alpha=0.7, label='gcd(N,210)=1 (solvable)'),
-        Patch(facecolor='red', alpha=0.7, label='gcd(N,210)≠1 (unsolvable)')
+        Patch(facecolor='red', alpha=0.7, label='gcd(N,210)≠1 (Conjectured unsolvable)')
     ]
     ax.legend(handles=legend_elements, loc='upper left')
     

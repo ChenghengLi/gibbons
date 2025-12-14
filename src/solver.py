@@ -6,6 +6,11 @@ import time
 import numpy as np
 
 
+# -----------------------------------------------------------------------------
+# JIT-Compiled Helper Functions (O(1) Complexity)
+# -----------------------------------------------------------------------------
+
+
 @jax.jit
 def check_attack_jit(q1, q2):
     """
@@ -67,24 +72,24 @@ def compute_delta_energy_jit(queen_idx, old_pos, new_pos, queens):
     return new_attacks - old_attacks
 
 
-@jax.jit 
-def compute_total_energy_jit(queens):
-    """
-    Compute total energy (number of attacking pairs) - JIT-compiled.
-
-    Args:
-        queens: all position of all queens
-    """
-    n = queens.shape[0]
-    
-    def check_pair(i, j):
-        return jnp.where(i < j, check_attack_jit(queens[i], queens[j]).astype(jnp.int32), 0)
-    
-    # Create all pairs
-    i_indices, j_indices = jnp.meshgrid(jnp.arange(n), jnp.arange(n), indexing='ij')
-    pairs = jax.vmap(jax.vmap(check_pair))(i_indices, j_indices)
-    
-    return jnp.sum(pairs)
+# @jax.jit
+# def compute_total_energy_jit(queens):
+#     """
+#     Compute total energy (number of attacking pairs) - JIT-compiled.
+#
+#     Args:
+#         queens: all position of all queens
+#     """
+#     n = queens.shape[0]
+#
+#     def check_pair(i, j):
+#         return jnp.where(i < j, check_attack_jit(queens[i], queens[j]).astype(jnp.int32), 0)
+#
+#     # Create all pairs
+#     i_indices, j_indices = jnp.meshgrid(jnp.arange(n), jnp.arange(n), indexing='ij')
+#     pairs = jax.vmap(jax.vmap(check_pair))(i_indices, j_indices)
+#
+#     return jnp.sum(pairs)
 
 
 @partial(jax.jit, static_argnums=(1,))
@@ -153,7 +158,7 @@ class MCMCSolver:
         self.state = board_state
         self.N = board_state.N
     
-    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, proposal_mix, simulated_annealing=True):
+    def run_improved(self, key, num_steps, initial_beta, final_beta, cooling, simulated_annealing):
         """
         Improved MCMC with multiple proposals and better cooling.
         
@@ -181,9 +186,6 @@ class MCMCSolver:
         energy_history = [float(energy)]
         accepted_count = 0
         
-        # Proposal probabilities
-        move_prob, swap_prob, greedy_prob = proposal_mix
-        
         print("="*60)
         print(f"3D Queens MCMC Solver (N={N}) - Improved")
         print("="*60)
@@ -193,7 +195,6 @@ class MCMCSolver:
             print(f"β: {initial_beta} --> {final_beta}")
         else:
             print(f"β: {initial_beta} (Constant)")
-        print(f"Proposals: move={move_prob:.0%}, swap={swap_prob:.0%}, greedy={greedy_prob:.0%}")
         print(f"Initial energy: {energy}")
         print("="*60)
         

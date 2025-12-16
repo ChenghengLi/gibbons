@@ -91,7 +91,7 @@ python main.py \
 | `--cooling` | `linear`, `geometric`, or `adaptive` | from config |
 | `--mode` | `single` or `multiple` | from config |
 | `--num-runs` | Number of runs for multiple mode | from config |
-| `--complexity` | `hash` (O(1)) or `iter` (O(N²)) | from config |
+| `--complexity` | `hash`, `iter`, or `endangered` | from config |
 | `--log-interval` | Steps between progress logs (0=auto) | from config |
 | `--no-annealing` | Disable simulated annealing | False |
 | `--verbose`, `-v` | Verbose output | False |
@@ -143,8 +143,9 @@ simulated_annealing: true  # Enable/disable annealing (false = constant beta)
 energy_treatment: linear
 
 # Complexity Options:
-#   - hash: O(1) energy updates using line counting (surrogate energy)
-#   - iter: O(N²) energy updates using iterative attack checking (true energy)
+#   - hash: O(1) energy updates using line counting
+#   - iter: O(N²) energy updates counting attacking pairs
+#   - endangered: O(N²) energy updates counting endangered queens
 complexity: hash
 
 # Energy Regrounding (for numerical stability, hash only)
@@ -183,7 +184,7 @@ output_dir: results        # Directory for saved results
 | `beta_max` | float | `25.0` | Final β |
 | `simulated_annealing` | bool | `true` | Enable annealing |
 | `energy_treatment` | str | `linear` | Energy function |
-| `complexity` | str | `hash` | `hash` (O(1)) or `iter` (O(N²)) |
+| `complexity` | str | `hash` | `hash`, `iter`, or `endangered` |
 | `energy_reground_interval` | int | `0` | Regrounding interval |
 | `log_interval` | int | `0` | Progress log interval (0=auto) |
 | `mode` | str | `single` | `single` or `multiple` |
@@ -311,7 +312,7 @@ result, history, accept_rate = solver.run(
     cooling='geometric',
     simulated_annealing=True,
     energy_treatment='linear',
-    complexity='hash',        # 'hash' (O(1)) or 'iter' (O(N²))
+    complexity='hash',        # 'hash', 'iter', or 'endangered'
     log_interval=10000,       # Log every 10k steps
     verbose=True
 )
@@ -354,7 +355,7 @@ result, history, accept_rate = solver.run(
     cooling='geometric',       # 'linear', 'geometric', 'adaptive'
     simulated_annealing=True,
     energy_treatment='linear', # 'linear', 'quadratic', 'log', 'log_quadratic'
-    complexity='hash',         # 'hash' (O(1)) or 'iter' (O(N²))
+    complexity='hash',         # 'hash', 'iter', or 'endangered'
     energy_reground_interval=10000,
     log_interval=10000,        # 0 = auto (10% of steps)
     verbose=True

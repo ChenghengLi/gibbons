@@ -3,11 +3,11 @@
 # =============================================================================
 
 # Board Configuration
-sizes: [11]              # List of board sizes N to run
+sizes: [10]              # List of board sizes N to run
 
 # Solver Configuration
-steps: 400000             # Number of MCMC steps
-seed: 42                   # Random seed
+steps: 4000000             # Number of MCMC steps
+seed: 43                   # Random seed
 
 # Log interval: how often to print progress (0 = auto, default 10% of steps)
 log_interval: 100000
@@ -19,18 +19,22 @@ state_space: full
 
 # Cooling Schedule: 'linear', 'geometric', or 'adaptive'
 cooling: geometric
-beta_min: 50              # Initial inverse temperature
-beta_max: 1000             # Final inverse temperature
+beta_min: 0.2              # Initial inverse temperature
+beta_max: 10             # Final inverse temperature
 simulated_annealing: true  # Enable/disable annealing
 
 # Energy Treatment: 'linear', 'quadratic', 'log', or 'log_quadratic'
 energy_treatment: linear
 
-# Complexity: 'hash' (O(1)), 'iter' (O(N²)), or 'endangered' (O(N²))
-#   - hash: Uses line counting for O(1) energy updates (surrogate energy)
-#   - iter: Uses iterative attack checking for O(N²) energy updates (counts attacking pairs)
-#   - endangered: Uses O(N²) to count number of endangered queens (queens under attack)
-complexity: hash
+# Complexity: 'hash', 'iter', 'endangered', 'colored', 'weighted', 'colored_endangered', or 'weighted_endangered'
+#   - hash: Uses line counting for O(1) energy updates
+#   - iter: Uses iterative attack checking (counts attacking pairs)
+#   - endangered: Counts number of endangered queens (queens under attack)
+#   - colored: Conflicts + 4 * (queens on black squares where (i+j+k) mod 2 == 1)
+#   - weighted: Conflicts + sum of |x+y-2z| for each queen position
+#   - colored_endangered: Endangered + 4 * (queens on black squares)
+#   - weighted_endangered: Endangered + sum of |x+y-2z| for each queen position
+complexity: weighted
 
 # Energy regrounding interval (0 to disable)
 energy_reground_interval: 10000
@@ -38,7 +42,7 @@ energy_reground_interval: 10000
 
 # Execution Mode: 'single' or 'multiple'
 mode: multiple
-num_runs: 5               # Number of runs if mode is 'multiple'
+num_runs: 1               # Number of runs if mode is 'multiple'
 
 # Output and Visualization
 show: false                # Show plots interactively

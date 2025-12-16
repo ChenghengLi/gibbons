@@ -153,7 +153,7 @@ class Config:
         if not self.sizes:
             errors.append("At least one board size must be specified")
         for size in self.sizes:
-            if size < 1:
+            if int(size) < 1:
                 errors.append(f"Board size must be positive, got {size}")
         
         # Validate steps
@@ -177,7 +177,7 @@ class Config:
             errors.append(f"Invalid energy_treatment '{self.energy_treatment}', must be one of {valid_treatments}")
         
         # Validate complexity
-        valid_complexity = ['hash', 'iter', 'endangered']
+        valid_complexity = ['hash', 'iter', 'endangered', 'colored', 'weighted', 'colored_endangered', 'weighted_endangered']
         if self.complexity not in valid_complexity:
             errors.append(f"Invalid complexity '{self.complexity}', must be one of {valid_complexity}")
         

@@ -768,9 +768,31 @@ def save_run_results(
         pairs = (counts * (counts - 1)) / 2
         hash_energy += float(np.sum(pairs))
     
+    # Colored energy (conflicts + 4 * black squares)
+    black_count = sum(1 for q in queens_list if (q[0] + q[1] + q[2]) % 2 == 1)
+    colored_energy = iter_energy + 4 * black_count
+    
+    # Weighted energy (conflicts + sum|x+y-2z|)
+    total_weight = sum(abs(q[0] + q[1] - 2 * q[2]) for q in queens_list)
+    weighted_energy = iter_energy + total_weight
+    
+    # Colored endangered energy (endangered + 4 * black squares)
+    colored_endangered_energy = endangered_energy + 4 * black_count
+    
+    # Weighted endangered energy (endangered + sum|x+y-2z|)
+    weighted_endangered_energy = endangered_energy + total_weight
+    
     json_metadata['final_energy_hash'] = hash_energy
     json_metadata['final_energy_iter'] = iter_energy
     json_metadata['final_energy_endangered'] = endangered_energy
+    json_metadata['final_energy_colored'] = colored_energy
+    json_metadata['final_energy_weighted'] = weighted_energy
+    json_metadata['final_energy_colored_endangered'] = colored_endangered_energy
+    json_metadata['final_energy_weighted_endangered'] = weighted_endangered_energy
+    json_metadata['black_squares_count'] = black_count
+    json_metadata['total_weight'] = total_weight
+    json_metadata['complexity'] = metadata.get('complexity', 'unknown')
+    json_metadata['energy_treatment'] = metadata.get('energy_treatment', 'linear')
     json_metadata['timestamp'] = datetime.now().isoformat()
     json_metadata['queens'] = [[int(q[0]), int(q[1]), int(q[2])] for q in queens]
     

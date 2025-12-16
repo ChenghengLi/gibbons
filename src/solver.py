@@ -31,6 +31,13 @@ from .utils import (
     compute_cooling_rate,
     initialize_line_counts_from_queens,
     check_attack_jit,
+    is_black_square,
+    count_black_squares,
+    compute_colored_energy,
+    position_weight,
+    compute_total_weight,
+    compute_weighted_energy,
+    compute_colored_endangered_energy,
 )
 
 
@@ -152,26 +159,28 @@ def compute_new_energy_iter(
 # JIT-Compiled MCMC Step Functions - HASH (O(1))
 # =============================================================================
 
-@partial(jax.jit, static_argnums=(1,))
+@partial(jax.jit, static_argnums=(1, 4))
 def mcmc_step_full_hash(
     state: Tuple,
     N: int,
     key: jnp.ndarray,
-    beta: jnp.ndarray
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
 ) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Single MCMC step for full state space - O(1) complexity using hash-based line counting.
     
     Args:
-        state: (queens, board, energy, line_counts)
+        state: (queens, board, energy, energy_untreated, line_counts)
         N: Board dimension
         key: JAX random key
         beta: Inverse temperature
+        energy_treatment: Optional energy transformation
         
     Returns:
         (new_state, delta_energy, accepted, new_key)
     """
-    queens, board, energy, line_counts = state
+    queens, board, energy, energy_untreated, line_counts = state
     
     # Select random queen
     key, subkey = jax.random.split(key)
@@ -191,13 +200,21 @@ def mcmc_step_full_hash(
         line_counts, old_pos, new_pos, N
     )
     
+    # Compute new untreated energy
+    new_energy_untreated = energy_untreated + delta_J
+    
+    # Compute treated delta for acceptance
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
     # Mask invalid moves
-    delta_J = jnp.where(is_occupied | is_self_move, 0.0, delta_J.astype(jnp.float32))
+    delta_J_treated = jnp.where(is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
     
     # Metropolis-Hastings acceptance
     key, subkey = jax.random.split(key)
     u = jax.random.uniform(subkey)
-    accept_condition = (delta_J <= 0) | (u < jnp.exp(-beta * delta_J))
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
     
     # Final acceptance (accept self-moves, reject occupied)
     accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
@@ -212,7 +229,9 @@ def mcmc_step_full_hash(
         board
     )
     
-    new_energy = jnp.where(accept, energy + delta_J, energy)
+    # Update energies
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
     
     new_line_counts = jax.tree.map(
         lambda p, o: jnp.where(accept, p, o),
@@ -220,31 +239,33 @@ def mcmc_step_full_hash(
         line_counts
     )
     
-    new_state = (new_queens, new_board, new_energy, new_line_counts)
+    new_state = (new_queens, new_board, final_energy, final_energy_untreated, new_line_counts)
     
-    return new_state, delta_J, accept, key
+    return new_state, delta_J_treated, accept, key
 
 
-@partial(jax.jit, static_argnums=(1,))
+@partial(jax.jit, static_argnums=(1, 4))
 def mcmc_step_reduced_hash(
     state: Tuple,
     N: int,
     key: jnp.ndarray,
-    beta: jnp.ndarray
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
 ) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """
     Single MCMC step for reduced state space - O(1) complexity using hash-based line counting.
     
     Args:
-        state: (k_config, energy, line_counts)
+        state: (k_config, energy, energy_untreated, line_counts)
         N: Board dimension
         key: JAX random key
         beta: Inverse temperature
+        energy_treatment: Optional energy transformation
         
     Returns:
         (new_state, delta_energy, accepted, new_key)
     """
-    k_config, energy, line_counts = state
+    k_config, energy, energy_untreated, line_counts = state
     
     # Select random (i, j)
     key, subkey = jax.random.split(key)
@@ -266,18 +287,27 @@ def mcmc_step_reduced_hash(
         line_counts, i, j, k_old, k_new, N
     )
     
-    delta_J = jnp.where(is_self_move, 0.0, delta_J.astype(jnp.float32))
+    # Compute new untreated energy
+    new_energy_untreated = energy_untreated + delta_J
+    
+    # Compute treated delta for acceptance
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    delta_J_treated = jnp.where(is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
     
     # Metropolis-Hastings acceptance
     key, subkey = jax.random.split(key)
     u = jax.random.uniform(subkey)
-    accept_condition = (delta_J <= 0) | (u < jnp.exp(-beta * delta_J))
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
     
     accept = jnp.where(is_self_move, True, accept_condition)
     
     # Update state conditionally
     new_k_config = jnp.where(accept, k_config.at[i, j].set(k_new), k_config)
-    new_energy = jnp.where(accept, energy + delta_J, energy)
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
     
     new_line_counts = jax.tree.map(
         lambda p, o: jnp.where(accept, p, o),
@@ -285,9 +315,9 @@ def mcmc_step_reduced_hash(
         line_counts
     )
     
-    new_state = (new_k_config, new_energy, new_line_counts)
+    new_state = (new_k_config, final_energy, final_energy_untreated, new_line_counts)
     
-    return new_state, delta_J, accept, key
+    return new_state, delta_J_treated, accept, key
 
 
 @partial(jax.jit, static_argnums=(1, 4))
@@ -595,6 +625,678 @@ def mcmc_step_reduced_endangered(
 
 
 # =============================================================================
+# JIT-Compiled MCMC Step Functions - COLORED (O(N²))
+# =============================================================================
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_full_colored(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for full state space - colored energy (conflicts + black square penalty).
+    
+    Args:
+        state: (queens, board, energy, energy_untreated, conflicts)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    queens, board, energy, energy_untreated, conflicts = state
+    
+    # Select random queen
+    key, subkey = jax.random.split(key)
+    queen_idx = jax.random.randint(subkey, (), 0, N**2)
+    old_pos = queens[queen_idx]
+    
+    # Select random cell
+    key, subkey = jax.random.split(key)
+    new_pos = jax.random.randint(subkey, (3,), 0, N)
+    
+    # Check conditions
+    is_self_move = (old_pos[0] == new_pos[0]) & (old_pos[1] == new_pos[1]) & (old_pos[2] == new_pos[2])
+    is_occupied = board[new_pos[0], new_pos[1], new_pos[2]]
+    
+    # Compute new conflicts (O(N²))
+    new_conflicts = compute_new_energy_iter(queen_idx, old_pos, new_pos, conflicts, queens)
+    
+    # Compute black square delta
+    old_is_black = is_black_square(old_pos)
+    new_is_black = is_black_square(new_pos)
+    black_delta = jnp.where(new_is_black, 1.0, 0.0) - jnp.where(old_is_black, 1.0, 0.0)
+    
+    # New colored energy = new_conflicts + 4 * (current_black_count + black_delta)
+    new_energy_untreated = new_conflicts + 4.0 * black_delta + (energy_untreated - conflicts)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    # Mask invalid moves
+    delta_J_treated = jnp.where(
+        is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32)
+    )
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    # Final acceptance (accept self-moves, reject occupied)
+    accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
+    
+    # Update state conditionally
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_board = jnp.where(
+        accept,
+        board.at[old_pos[0], old_pos[1], old_pos[2]].set(False)
+             .at[new_pos[0], new_pos[1], new_pos[2]].set(True),
+        board
+    )
+    
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_conflicts = jnp.where(accept, new_conflicts, conflicts)
+    
+    new_state = (new_queens, new_board, final_energy, final_energy_untreated, final_conflicts)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_reduced_colored(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for reduced state space - colored energy (conflicts + black square penalty).
+    
+    Args:
+        state: (k_config, energy, energy_untreated, conflicts, queens)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    k_config, energy, energy_untreated, conflicts, queens = state
+    
+    # Select random (i, j)
+    key, subkey = jax.random.split(key)
+    i = jax.random.randint(subkey, (), 0, N)
+    key, subkey = jax.random.split(key)
+    j = jax.random.randint(subkey, (), 0, N)
+    
+    k_old = k_config[i, j]
+    queen_idx = i * N + j
+    old_pos = jnp.array([i, j, k_old])
+    
+    # Select new k (different from current)
+    key, subkey = jax.random.split(key)
+    offset = jax.random.randint(subkey, (), 1, N)
+    k_new = (k_old + offset) % N
+    new_pos = jnp.array([i, j, k_new])
+    
+    is_self_move = (k_old == k_new)
+    
+    # Compute new conflicts (O(N²))
+    new_conflicts = compute_new_energy_iter(queen_idx, old_pos, new_pos, conflicts, queens)
+    
+    # Compute black square delta
+    old_is_black = is_black_square(old_pos)
+    new_is_black = is_black_square(new_pos)
+    black_delta = jnp.where(new_is_black, 1.0, 0.0) - jnp.where(old_is_black, 1.0, 0.0)
+    
+    # New colored energy
+    new_energy_untreated = new_conflicts + 4.0 * black_delta + (energy_untreated - conflicts)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    delta_J_treated = jnp.where(is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    accept = jnp.where(is_self_move, True, accept_condition)
+    
+    # Update state conditionally
+    new_k_config = jnp.where(accept, k_config.at[i, j].set(k_new), k_config)
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_conflicts = jnp.where(accept, new_conflicts, conflicts)
+    
+    # Update queens array
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_state = (new_k_config, final_energy, final_energy_untreated, final_conflicts, new_queens)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+# =============================================================================
+# JIT-Compiled MCMC Step Functions - WEIGHTED (O(N²))
+# =============================================================================
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_full_weighted(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for full state space - weighted energy (conflicts + sum|x+y-2z|).
+    
+    Args:
+        state: (queens, board, energy, energy_untreated, conflicts)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    queens, board, energy, energy_untreated, conflicts = state
+    
+    # Select random queen
+    key, subkey = jax.random.split(key)
+    queen_idx = jax.random.randint(subkey, (), 0, N**2)
+    old_pos = queens[queen_idx]
+    
+    # Select random cell
+    key, subkey = jax.random.split(key)
+    new_pos = jax.random.randint(subkey, (3,), 0, N)
+    
+    # Check conditions
+    is_self_move = (old_pos[0] == new_pos[0]) & (old_pos[1] == new_pos[1]) & (old_pos[2] == new_pos[2])
+    is_occupied = board[new_pos[0], new_pos[1], new_pos[2]]
+    
+    # Compute new conflicts (O(N²))
+    new_conflicts = compute_new_energy_iter(queen_idx, old_pos, new_pos, conflicts, queens)
+    
+    # Compute weight delta: |x_new+y_new-2z_new| - |x_old+y_old-2z_old|
+    old_weight = position_weight(old_pos)
+    new_weight = position_weight(new_pos)
+    weight_delta = new_weight - old_weight
+    
+    # New weighted energy
+    new_energy_untreated = new_conflicts + weight_delta + (energy_untreated - conflicts)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    # Mask invalid moves
+    delta_J_treated = jnp.where(
+        is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32)
+    )
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    # Final acceptance (accept self-moves, reject occupied)
+    accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
+    
+    # Update state conditionally
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_board = jnp.where(
+        accept,
+        board.at[old_pos[0], old_pos[1], old_pos[2]].set(False)
+             .at[new_pos[0], new_pos[1], new_pos[2]].set(True),
+        board
+    )
+    
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_conflicts = jnp.where(accept, new_conflicts, conflicts)
+    
+    new_state = (new_queens, new_board, final_energy, final_energy_untreated, final_conflicts)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_reduced_weighted(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for reduced state space - weighted energy (conflicts + sum|x+y-2z|).
+    
+    Args:
+        state: (k_config, energy, energy_untreated, conflicts, queens)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    k_config, energy, energy_untreated, conflicts, queens = state
+    
+    # Select random (i, j)
+    key, subkey = jax.random.split(key)
+    i = jax.random.randint(subkey, (), 0, N)
+    key, subkey = jax.random.split(key)
+    j = jax.random.randint(subkey, (), 0, N)
+    
+    k_old = k_config[i, j]
+    queen_idx = i * N + j
+    old_pos = jnp.array([i, j, k_old])
+    
+    # Select new k (different from current)
+    key, subkey = jax.random.split(key)
+    offset = jax.random.randint(subkey, (), 1, N)
+    k_new = (k_old + offset) % N
+    new_pos = jnp.array([i, j, k_new])
+    
+    is_self_move = (k_old == k_new)
+    
+    # Compute new conflicts (O(N²))
+    new_conflicts = compute_new_energy_iter(queen_idx, old_pos, new_pos, conflicts, queens)
+    
+    # Compute weight delta
+    old_weight = position_weight(old_pos)
+    new_weight = position_weight(new_pos)
+    weight_delta = new_weight - old_weight
+    
+    # New weighted energy
+    new_energy_untreated = new_conflicts + weight_delta + (energy_untreated - conflicts)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    delta_J_treated = jnp.where(is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    accept = jnp.where(is_self_move, True, accept_condition)
+    
+    # Update state conditionally
+    new_k_config = jnp.where(accept, k_config.at[i, j].set(k_new), k_config)
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_conflicts = jnp.where(accept, new_conflicts, conflicts)
+    
+    # Update queens array
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_state = (new_k_config, final_energy, final_energy_untreated, final_conflicts, new_queens)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+# =============================================================================
+# JIT-Compiled MCMC Step Functions - COLORED ENDANGERED (O(N²))
+# =============================================================================
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_full_colored_endangered(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for full state space - colored endangered energy (endangered + 4*black).
+    
+    Args:
+        state: (queens, board, energy, energy_untreated, endangered)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    queens, board, energy, energy_untreated, endangered = state
+    
+    # Select random queen
+    key, subkey = jax.random.split(key)
+    queen_idx = jax.random.randint(subkey, (), 0, N**2)
+    old_pos = queens[queen_idx]
+    
+    # Select random cell
+    key, subkey = jax.random.split(key)
+    new_pos = jax.random.randint(subkey, (3,), 0, N)
+    
+    # Check conditions
+    is_self_move = (old_pos[0] == new_pos[0]) & (old_pos[1] == new_pos[1]) & (old_pos[2] == new_pos[2])
+    is_occupied = board[new_pos[0], new_pos[1], new_pos[2]]
+    
+    # Compute new endangered count (O(N²))
+    new_endangered = compute_new_energy_endangered(queen_idx, old_pos, new_pos, queens)
+    
+    # Compute black square delta
+    old_black = is_black_square(old_pos)
+    new_black = is_black_square(new_pos)
+    black_delta = new_black.astype(jnp.float32) - old_black.astype(jnp.float32)
+    
+    # New colored endangered energy
+    new_energy_untreated = new_endangered + 4.0 * black_delta + (energy_untreated - endangered)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    # Mask invalid moves
+    delta_J_treated = jnp.where(
+        is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32)
+    )
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    # Final acceptance (accept self-moves, reject occupied)
+    accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
+    
+    # Update state conditionally
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_board = jnp.where(
+        accept,
+        board.at[old_pos[0], old_pos[1], old_pos[2]].set(False)
+             .at[new_pos[0], new_pos[1], new_pos[2]].set(True),
+        board
+    )
+    
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_endangered = jnp.where(accept, new_endangered, endangered)
+    
+    new_state = (new_queens, new_board, final_energy, final_energy_untreated, final_endangered)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_reduced_colored_endangered(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for reduced state space - colored endangered energy (endangered + 4*black).
+    
+    Args:
+        state: (k_config, energy, energy_untreated, endangered, queens)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    k_config, energy, energy_untreated, endangered, queens = state
+    
+    # Select random (i, j)
+    key, subkey = jax.random.split(key)
+    i = jax.random.randint(subkey, (), 0, N)
+    key, subkey = jax.random.split(key)
+    j = jax.random.randint(subkey, (), 0, N)
+    
+    k_old = k_config[i, j]
+    queen_idx = i * N + j
+    old_pos = jnp.array([i, j, k_old])
+    
+    # Select new k (different from current)
+    key, subkey = jax.random.split(key)
+    offset = jax.random.randint(subkey, (), 1, N)
+    k_new = (k_old + offset) % N
+    new_pos = jnp.array([i, j, k_new])
+    
+    is_self_move = (k_old == k_new)
+    
+    # Compute new endangered count (O(N²))
+    new_endangered = compute_new_energy_endangered(queen_idx, old_pos, new_pos, queens)
+    
+    # Compute black square delta
+    old_black = is_black_square(old_pos)
+    new_black = is_black_square(new_pos)
+    black_delta = new_black.astype(jnp.float32) - old_black.astype(jnp.float32)
+    
+    # New colored endangered energy
+    new_energy_untreated = new_endangered + 4.0 * black_delta + (energy_untreated - endangered)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    delta_J_treated = jnp.where(is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    accept = jnp.where(is_self_move, True, accept_condition)
+    
+    # Update state conditionally
+    new_k_config = jnp.where(accept, k_config.at[i, j].set(k_new), k_config)
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_endangered = jnp.where(accept, new_endangered, endangered)
+    
+    # Update queens array
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_state = (new_k_config, final_energy, final_energy_untreated, final_endangered, new_queens)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+# =============================================================================
+# JIT-Compiled MCMC Step Functions - WEIGHTED ENDANGERED (O(N²))
+# =============================================================================
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_full_weighted_endangered(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for full state space - weighted endangered energy (endangered + sum|x+y-2z|).
+    
+    Args:
+        state: (queens, board, energy, energy_untreated, endangered)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    queens, board, energy, energy_untreated, endangered = state
+    
+    # Select random queen
+    key, subkey = jax.random.split(key)
+    queen_idx = jax.random.randint(subkey, (), 0, N**2)
+    old_pos = queens[queen_idx]
+    
+    # Select random cell
+    key, subkey = jax.random.split(key)
+    new_pos = jax.random.randint(subkey, (3,), 0, N)
+    
+    # Check conditions
+    is_self_move = (old_pos[0] == new_pos[0]) & (old_pos[1] == new_pos[1]) & (old_pos[2] == new_pos[2])
+    is_occupied = board[new_pos[0], new_pos[1], new_pos[2]]
+    
+    # Compute new endangered count (O(N²))
+    new_endangered = compute_new_energy_endangered(queen_idx, old_pos, new_pos, queens)
+    
+    # Compute weight delta: |x+y-2z|
+    old_weight = position_weight(old_pos)
+    new_weight = position_weight(new_pos)
+    weight_delta = new_weight - old_weight
+    
+    # New weighted endangered energy
+    new_energy_untreated = new_endangered + weight_delta + (energy_untreated - endangered)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    # Mask invalid moves
+    delta_J_treated = jnp.where(
+        is_occupied | is_self_move, 0.0, delta_J_treated.astype(jnp.float32)
+    )
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    # Final acceptance (accept self-moves, reject occupied)
+    accept = jnp.where(is_self_move, True, accept_condition & ~is_occupied)
+    
+    # Update state conditionally
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_board = jnp.where(
+        accept,
+        board.at[old_pos[0], old_pos[1], old_pos[2]].set(False)
+             .at[new_pos[0], new_pos[1], new_pos[2]].set(True),
+        board
+    )
+    
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_endangered = jnp.where(accept, new_endangered, endangered)
+    
+    new_state = (new_queens, new_board, final_energy, final_energy_untreated, final_endangered)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+@partial(jax.jit, static_argnums=(1, 4))
+def mcmc_step_reduced_weighted_endangered(
+    state: Tuple,
+    N: int,
+    key: jnp.ndarray,
+    beta: jnp.ndarray,
+    energy_treatment: Optional[Callable] = None
+) -> Tuple[Tuple, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """
+    Single MCMC step for reduced state space - weighted endangered energy (endangered + sum|x+y-2z|).
+    
+    Args:
+        state: (k_config, energy, energy_untreated, endangered, queens)
+        N: Board dimension
+        key: JAX random key
+        beta: Inverse temperature
+        energy_treatment: Optional energy transformation
+        
+    Returns:
+        (new_state, delta_energy, accepted, new_key)
+    """
+    k_config, energy, energy_untreated, endangered, queens = state
+    
+    # Select random (i, j)
+    key, subkey = jax.random.split(key)
+    i = jax.random.randint(subkey, (), 0, N)
+    key, subkey = jax.random.split(key)
+    j = jax.random.randint(subkey, (), 0, N)
+    
+    k_old = k_config[i, j]
+    queen_idx = i * N + j
+    old_pos = jnp.array([i, j, k_old])
+    
+    # Select new k (different from current)
+    key, subkey = jax.random.split(key)
+    offset = jax.random.randint(subkey, (), 1, N)
+    k_new = (k_old + offset) % N
+    new_pos = jnp.array([i, j, k_new])
+    
+    is_self_move = (k_old == k_new)
+    
+    # Compute new endangered count (O(N²))
+    new_endangered = compute_new_energy_endangered(queen_idx, old_pos, new_pos, queens)
+    
+    # Compute weight delta: |x+y-2z|
+    old_weight = position_weight(old_pos)
+    new_weight = position_weight(new_pos)
+    weight_delta = new_weight - old_weight
+    
+    # New weighted endangered energy
+    new_energy_untreated = new_endangered + weight_delta + (energy_untreated - endangered)
+    
+    # Compute treated delta
+    delta_J_treated = compute_delta_energy_treated(
+        energy_untreated, new_energy_untreated, energy_treatment
+    )
+    
+    delta_J_treated = jnp.where(is_self_move, 0.0, delta_J_treated.astype(jnp.float32))
+    
+    # Metropolis-Hastings acceptance
+    key, subkey = jax.random.split(key)
+    u = jax.random.uniform(subkey)
+    accept_condition = (delta_J_treated <= 0) | (u < jnp.exp(-beta * delta_J_treated))
+    
+    accept = jnp.where(is_self_move, True, accept_condition)
+    
+    # Update state conditionally
+    new_k_config = jnp.where(accept, k_config.at[i, j].set(k_new), k_config)
+    final_energy_untreated = jnp.where(accept, new_energy_untreated, energy_untreated)
+    final_energy = jnp.where(accept, energy + delta_J_treated, energy)
+    final_endangered = jnp.where(accept, new_endangered, endangered)
+    
+    # Update queens array
+    new_queens = jnp.where(accept, queens.at[queen_idx].set(new_pos), queens)
+    
+    new_state = (new_k_config, final_energy, final_energy_untreated, final_endangered, new_queens)
+    
+    return new_state, delta_J_treated, accept, key
+
+
+# =============================================================================
 # Solver Base Class
 # =============================================================================
 
@@ -710,30 +1412,63 @@ class FullStateSolver(BaseSolver):
         queens = self._board.get_queens().astype(jnp.int32)
         board = self._board.get_board()
         
+        treatment_fn = get_energy_treatment(energy_treatment)
+        
         if complexity == 'hash':
             line_counts = self._board.get_line_counts()
-            energy = jnp.array(compute_energy_from_line_counts(line_counts), dtype=jnp.float32)
-            state = (queens, board, energy, line_counts)
+            energy_untreated = jnp.array(compute_energy_from_line_counts(line_counts), dtype=jnp.float32)
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (queens, board, energy, energy_untreated, line_counts)
             mcmc_step_fn = mcmc_step_full_hash
         elif complexity == 'iter':
             # iter mode - counts attacking pairs
-            treatment_fn = get_energy_treatment(energy_treatment)
             energy_untreated = jnp.array(float(self._board.energy), dtype=jnp.float32)
             energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
             state = (queens, board, energy, energy_untreated)
             mcmc_step_fn = mcmc_step_full_iter
-        else:
+        elif complexity == 'endangered':
             # endangered mode - counts endangered queens
-            treatment_fn = get_energy_treatment(energy_treatment)
             energy_untreated = compute_endangered_energy(queens)
             energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
             state = (queens, board, energy, energy_untreated)
             mcmc_step_fn = mcmc_step_full_endangered
+        elif complexity == 'colored':
+            # colored mode - conflicts + 4 * black squares
+            conflicts = jnp.array(float(self._board.energy), dtype=jnp.float32)
+            black_count = count_black_squares(queens)
+            energy_untreated = conflicts + 4.0 * black_count
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (queens, board, energy, energy_untreated, conflicts)
+            mcmc_step_fn = mcmc_step_full_colored
+        elif complexity == 'weighted':
+            # weighted mode - conflicts + sum|x+y-2z|
+            conflicts = jnp.array(float(self._board.energy), dtype=jnp.float32)
+            total_weight = compute_total_weight(queens)
+            energy_untreated = conflicts + total_weight
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (queens, board, energy, energy_untreated, conflicts)
+            mcmc_step_fn = mcmc_step_full_weighted
+        elif complexity == 'colored_endangered':
+            # colored_endangered mode - endangered + 4 * black squares
+            endangered = compute_endangered_energy(queens)
+            black_count = count_black_squares(queens)
+            energy_untreated = endangered + 4.0 * black_count
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (queens, board, energy, energy_untreated, endangered)
+            mcmc_step_fn = mcmc_step_full_colored_endangered
+        else:
+            # weighted_endangered mode - endangered + sum|x+y-2z|
+            endangered = compute_endangered_energy(queens)
+            total_weight = compute_total_weight(queens)
+            energy_untreated = endangered + total_weight
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (queens, board, energy, energy_untreated, endangered)
+            mcmc_step_fn = mcmc_step_full_weighted_endangered
         
         # Best state tracking
         best_queens = queens
         best_board = board
-        best_energy = float(state[2]) if complexity == 'hash' else float(state[3])
+        best_energy = float(energy_untreated)
         best_line_counts = line_counts if complexity == 'hash' else None
         
         energy_history = [best_energy]
@@ -764,9 +1499,13 @@ class FullStateSolver(BaseSolver):
             beta_jnp = jnp.array(beta, dtype=jnp.float32)
             
             if complexity == 'hash':
-                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp)
-                queens, board, energy, line_counts = state
-                current_energy = float(energy)
+                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
+                queens, board, energy, energy_untreated, line_counts = state
+                current_energy = float(energy_untreated)
+            elif complexity in ['colored', 'weighted', 'colored_endangered', 'weighted_endangered']:
+                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
+                queens, board, energy, energy_untreated, _ = state
+                current_energy = float(energy_untreated)
             else:
                 state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
                 queens, board, energy, energy_untreated = state
@@ -873,8 +1612,9 @@ class ReducedStateSolver(BaseSolver):
         
         if complexity == 'hash':
             line_counts = self._board.get_line_counts()
-            energy = jnp.array(compute_energy_from_line_counts(line_counts), dtype=jnp.float32)
-            state = (k_config, energy, line_counts)
+            energy_untreated = jnp.array(compute_energy_from_line_counts(line_counts), dtype=jnp.float32)
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (k_config, energy, energy_untreated, line_counts)
             mcmc_step_fn = mcmc_step_reduced_hash
         elif complexity == 'iter':
             # iter mode - counts attacking pairs
@@ -883,18 +1623,54 @@ class ReducedStateSolver(BaseSolver):
             energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
             state = (k_config, energy, energy_untreated, queens)
             mcmc_step_fn = mcmc_step_reduced_iter
-        else:
+        elif complexity == 'endangered':
             # endangered mode - counts endangered queens
             queens = self._board.get_queens().astype(jnp.int32)
             energy_untreated = compute_endangered_energy(queens)
             energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
             state = (k_config, energy, energy_untreated, queens)
             mcmc_step_fn = mcmc_step_reduced_endangered
+        elif complexity == 'colored':
+            # colored mode - conflicts + 4 * black squares
+            queens = self._board.get_queens().astype(jnp.int32)
+            conflicts = jnp.array(float(self._board.energy), dtype=jnp.float32)
+            black_count = count_black_squares(queens)
+            energy_untreated = conflicts + 4.0 * black_count
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (k_config, energy, energy_untreated, conflicts, queens)
+            mcmc_step_fn = mcmc_step_reduced_colored
+        elif complexity == 'weighted':
+            # weighted mode - conflicts + sum|x+y-2z|
+            queens = self._board.get_queens().astype(jnp.int32)
+            conflicts = jnp.array(float(self._board.energy), dtype=jnp.float32)
+            total_weight = compute_total_weight(queens)
+            energy_untreated = conflicts + total_weight
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (k_config, energy, energy_untreated, conflicts, queens)
+            mcmc_step_fn = mcmc_step_reduced_weighted
+        elif complexity == 'colored_endangered':
+            # colored_endangered mode - endangered + 4 * black squares
+            queens = self._board.get_queens().astype(jnp.int32)
+            endangered = compute_endangered_energy(queens)
+            black_count = count_black_squares(queens)
+            energy_untreated = endangered + 4.0 * black_count
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (k_config, energy, energy_untreated, endangered, queens)
+            mcmc_step_fn = mcmc_step_reduced_colored_endangered
+        else:
+            # weighted_endangered mode - endangered + sum|x+y-2z|
+            queens = self._board.get_queens().astype(jnp.int32)
+            endangered = compute_endangered_energy(queens)
+            total_weight = compute_total_weight(queens)
+            energy_untreated = endangered + total_weight
+            energy = energy_untreated if treatment_fn is None else treatment_fn(energy_untreated)
+            state = (k_config, energy, energy_untreated, endangered, queens)
+            mcmc_step_fn = mcmc_step_reduced_weighted_endangered
         
         # Best state tracking
         best_k_config = k_config
         best_line_counts = self._board.get_line_counts() if complexity == 'hash' else None
-        best_energy = float(state[2]) if complexity in ['iter', 'endangered'] else float(state[1])
+        best_energy = float(energy_untreated)
         
         energy_history = [best_energy]
         accepted_count = 0
@@ -925,9 +1701,13 @@ class ReducedStateSolver(BaseSolver):
             beta_jnp = jnp.array(beta, dtype=jnp.float32)
             
             if complexity == 'hash':
-                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp)
-                k_config, energy, line_counts = state
-                current_energy = float(energy)
+                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
+                k_config, energy, energy_untreated, line_counts = state
+                current_energy = float(energy_untreated)
+            elif complexity in ['colored', 'weighted', 'colored_endangered', 'weighted_endangered']:
+                state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
+                k_config, energy, energy_untreated, _, queens = state
+                current_energy = float(energy_untreated)
             else:
                 state, delta, accepted, key = mcmc_step_fn(state, N, key, beta_jnp, treatment_fn)
                 k_config, energy, energy_untreated, queens = state

@@ -238,6 +238,194 @@ def count_attacking_pairs(queens: List[Tuple[int, int, int]]) -> int:
 
 
 # =============================================================================
+# Colored Energy Functions (conflicts + black square penalty)
+# =============================================================================
+
+@jax.jit
+def is_black_square(pos: jnp.ndarray) -> jnp.ndarray:
+    """Check if position is a black square: (i+j+k) mod 2 == 1"""
+    return ((pos[0] + pos[1] + pos[2]) % 2) == 1
+
+
+@jax.jit
+def count_black_squares(queens: jnp.ndarray) -> jnp.ndarray:
+    """Count number of queens on black squares."""
+    black = jax.vmap(is_black_square)(queens)
+    return jnp.sum(black)
+
+
+@jax.jit
+def compute_colored_energy(queens: jnp.ndarray, conflicts: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute colored energy: conflicts + 4 * (queens on black squares).
+    
+    Args:
+        queens: Array of shape (N², 3) with queen positions
+        conflicts: Number of attacking pairs
+        
+    Returns:
+        Colored energy value.
+    """
+    black_count = count_black_squares(queens)
+    return conflicts + 4.0 * black_count
+
+
+def compute_colored_energy_python(queens: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
+    """
+    Compute colored energy using Python (for verification).
+    
+    Args:
+        queens: List of queen positions as (i, j, k) tuples.
+        
+    Returns:
+        Tuple of (total_energy, conflicts, black_count)
+    """
+    conflicts = count_attacking_pairs(queens)
+    black_count = sum(1 for q in queens if (q[0] + q[1] + q[2]) % 2 == 1)
+    total = conflicts + 4 * black_count
+    return total, conflicts, black_count
+
+
+# =============================================================================
+# Weighted Energy Functions (conflicts + sum of |x+y-2z|)
+# =============================================================================
+
+@jax.jit
+def position_weight(pos: jnp.ndarray) -> jnp.ndarray:
+    """Compute position weight: |x + y - 2z|"""
+    return jnp.abs(pos[0] + pos[1] - 2 * pos[2])
+
+
+@jax.jit
+def compute_total_weight(queens: jnp.ndarray) -> jnp.ndarray:
+    """Compute sum of |x+y-2z| for all queens."""
+    weights = jax.vmap(position_weight)(queens)
+    return jnp.sum(weights)
+
+
+@jax.jit
+def compute_weighted_energy(queens: jnp.ndarray, conflicts: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute weighted energy: conflicts + sum of |x+y-2z| for all queens.
+    
+    Args:
+        queens: Array of shape (N², 3) with queen positions
+        conflicts: Number of attacking pairs
+        
+    Returns:
+        Weighted energy value.
+    """
+    total_weight = compute_total_weight(queens)
+    return conflicts + total_weight
+
+
+def compute_weighted_energy_python(queens: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
+    """
+    Compute weighted energy using Python (for verification).
+    
+    Args:
+        queens: List of queen positions as (i, j, k) tuples.
+        
+    Returns:
+        Tuple of (total_energy, conflicts, total_weight)
+    """
+    conflicts = count_attacking_pairs(queens)
+    total_weight = sum(abs(q[0] + q[1] - 2 * q[2]) for q in queens)
+    total = conflicts + total_weight
+    return total, conflicts, total_weight
+
+
+# =============================================================================
+# Colored Endangered Energy Functions (endangered + 4 * black squares)
+# =============================================================================
+
+@jax.jit
+def compute_colored_endangered_energy(queens: jnp.ndarray, endangered: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute colored endangered energy: endangered + 4 * black_squares.
+    
+    Args:
+        queens: Array of shape (N², 3) with queen positions
+        endangered: Number of endangered queens
+        
+    Returns:
+        Colored endangered energy value.
+    """
+    black_count = count_black_squares(queens)
+    return endangered + 4.0 * black_count
+
+
+def compute_colored_endangered_energy_python(queens: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
+    """
+    Compute colored endangered energy using Python (for verification).
+    
+    Args:
+        queens: List of queen positions as (i, j, k) tuples.
+        
+    Returns:
+        Tuple of (total_energy, endangered_count, black_count)
+    """
+    # Count endangered queens
+    n = len(queens)
+    endangered_set = set()
+    for i in range(n):
+        for j in range(i + 1, n):
+            if check_attack_python(queens[i], queens[j]):
+                endangered_set.add(i)
+                endangered_set.add(j)
+    endangered_count = len(endangered_set)
+    
+    black_count = sum(1 for q in queens if (q[0] + q[1] + q[2]) % 2 == 1)
+    total = endangered_count + 4 * black_count
+    return total, endangered_count, black_count
+
+
+# =============================================================================
+# Weighted Endangered Energy Functions (endangered + sum|x+y-2z|)
+# =============================================================================
+
+@jax.jit
+def compute_weighted_endangered_energy(queens: jnp.ndarray, endangered: jnp.ndarray) -> jnp.ndarray:
+    """
+    Compute weighted endangered energy: endangered + sum of |x+y-2z| for all queens.
+    
+    Args:
+        queens: Array of shape (N², 3) with queen positions
+        endangered: Number of endangered queens
+        
+    Returns:
+        Weighted endangered energy value.
+    """
+    total_weight = compute_total_weight(queens)
+    return endangered + total_weight
+
+
+def compute_weighted_endangered_energy_python(queens: List[Tuple[int, int, int]]) -> Tuple[int, int, int]:
+    """
+    Compute weighted endangered energy using Python (for verification).
+    
+    Args:
+        queens: List of queen positions as (i, j, k) tuples.
+        
+    Returns:
+        Tuple of (total_energy, endangered_count, total_weight)
+    """
+    # Count endangered queens
+    n = len(queens)
+    endangered_set = set()
+    for i in range(n):
+        for j in range(i + 1, n):
+            if check_attack_python(queens[i], queens[j]):
+                endangered_set.add(i)
+                endangered_set.add(j)
+    endangered_count = len(endangered_set)
+    
+    total_weight = sum(abs(q[0] + q[1] - 2 * q[2]) for q in queens)
+    total = endangered_count + total_weight
+    return total, endangered_count, total_weight
+
+
+# =============================================================================
 # Line Index Functions (for O(1) energy updates)
 # =============================================================================
 

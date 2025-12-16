@@ -237,8 +237,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--complexity',
         type=str,
-        choices=['hash', 'iter', 'endangered'],
-        help='Energy computation: hash (O(1)), iter (O(N²) pairs), or endangered (O(N²) queens)'
+        choices=['hash', 'iter', 'endangered', 'colored', 'weighted', 'colored_endangered', 'weighted_endangered'],
+        help='Energy computation: hash, iter, endangered, colored, weighted, colored_endangered, or weighted_endangered'
     )
     
     parser.add_argument(

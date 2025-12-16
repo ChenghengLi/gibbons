@@ -1,21 +1,46 @@
+# =============================================================================
+# 3D N² Queens MCMC Solver Configuration
+# =============================================================================
+
 # Board Configuration
-sizes: [5,6]       # List of Board sizes (N) to run
+sizes: [11]              # List of board sizes N to run
 
 # Solver Configuration
-steps: 10000000     # Number of MCMC steps
-seed: 42         # Random seed (for single run or base seed)  default=42
-method: basic    # MCMC method: basic, improved
-cooling: geometric # Cooling schedule: linear, geometric, adaptive
-beta_min: 0.1    # Initial/min beta
-beta_max: 25.0   # Final/max beta
-simulated_annealing: true # Enable/disable simulated annealing
-energy_treatment: linear #Possible options: linear, quadratic, log, log_quadratic
-complexity: hash # Complexity: hash (O(1)) or iter (O(N²))
-energy_reground_interval: 10000 # Steps between energy recalculations (0 to disable)
+steps: 400000             # Number of MCMC steps
+seed: 42                   # Random seed
 
-# Execution Mode
-mode: multiple     # single or multiple
-num_runs: 10      # Number of runs if mode is multiple
+# Log interval: how often to print progress (0 = auto, default 10% of steps)
+log_interval: 100000
 
-# Visualization
-show: false      # Show plots interactively
+# State Space: 'full' or 'reduced'
+#   - full: C(N³, N²) configurations, queens anywhere
+#   - reduced: N^(N²) configurations, one queen per (i,j)
+state_space: full
+
+# Cooling Schedule: 'linear', 'geometric', or 'adaptive'
+cooling: geometric
+beta_min: 50              # Initial inverse temperature
+beta_max: 1000             # Final inverse temperature
+simulated_annealing: true  # Enable/disable annealing
+
+# Energy Treatment: 'linear', 'quadratic', 'log', or 'log_quadratic'
+energy_treatment: linear
+
+# Complexity: 'hash' (O(1)), 'iter' (O(N²)), or 'endangered' (O(N²))
+#   - hash: Uses line counting for O(1) energy updates (surrogate energy)
+#   - iter: Uses iterative attack checking for O(N²) energy updates (counts attacking pairs)
+#   - endangered: Uses O(N²) to count number of endangered queens (queens under attack)
+complexity: hash
+
+# Energy regrounding interval (0 to disable)
+energy_reground_interval: 10000
+
+
+# Execution Mode: 'single' or 'multiple'
+mode: multiple
+num_runs: 5               # Number of runs if mode is 'multiple'
+
+# Output and Visualization
+show: false                # Show plots interactively
+save: false                # Save results (plots and data)
+output_dir: results        # Directory for saved results

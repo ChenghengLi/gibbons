@@ -1,341 +1,465 @@
+"""
+Main entry point for 3D N² Queens MCMC Solver (Refactored).
+
+This script provides a modular, config-driven interface to run the solver
+with either full or reduced state space.
+
+Usage:
+    python main.py --config config.yaml
+    python main.py --config config.yaml --state-space reduced
+    python main.py --size 5 --steps 100000 --state-space full
+"""
+
 import argparse
-import jax
-import math
-import yaml
+import sys
+from typing import List, Tuple, Optional
 import numpy as np
-from src.board import BoardState
-from src.solver import MCMCSolver
-from src.visualize import visualize_solution, plot_energy_history, plot_averaged_energy_history, visualize_latin_square
-import matplotlib.pyplot as plt
+
+import jax
+
+from src.config import Config
+from src.board import FullBoardState, ReducedBoardState
+from src.solver import FullStateSolver, ReducedStateSolver, create_solver
+from src.utils import check_solvability
+from src.visualize import (
+    visualize_solution,
+    visualize_latin_square,
+    plot_energy_history,
+    plot_averaged_energy_history,
+    save_results,
+    save_multiple_results,
+    save_run_results,
+    save_competition_format,
+)
 
 
-def check_solvability(N):
+# =============================================================================
+# Runner Classes
+# =============================================================================
+
+class SolverRunner:
     """
-    Check if the 3D N² Queens problem is theoretically solvable.
-    
-    Based on Klarner's theorem (1967):
-    - If gcd(N, 210) = 1 a solution exists (sufficient condition, conjectured necessary)
-    - We write unsolvable if gcd(N, 210) != 1 (even though it might be solvable)
-    - 210 = 2 × 3 × 5 × 7
-    - This means N must not be divisible by 2, 3, 5, or 7
-    
-    Known solvable N (up to 20): 1, 11, 13, 17, 19, ...
-    Known unsolvable N: 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, ...
+    Orchestrates solver execution based on configuration.
     """
-    gcd = math.gcd(N, 210)
-    solvable = (gcd == 1)
     
-    # Factor 210 to show which primes divide N
-    factors = []
-    if N % 2 == 0: factors.append(2)
-    if N % 3 == 0: factors.append(3)
-    if N % 5 == 0: factors.append(5)
-    if N % 7 == 0: factors.append(7)
-    
-    return {
-        'N': N,
-        'gcd_210': gcd,
-        'solvable': solvable,
-        'factors': factors,
-        'queens': N**2,
-        'cells': N**3,
-        'density': N**2 / N**3
-    }
-
-
-def print_solvability_info(info):
-    """Print solvability information."""
-    print("="*60)
-    print("PROBLEM SOLVABILITY CHECK")
-    print("="*60)
-    print(f"Board size N = {info['N']}")
-    print(f"Queens: {info['queens']}, Cells: {info['cells']}, Density: {info['density']:.1%}")
-    print(f"gcd(N, 210) = gcd({info['N']}, 2×3×5×7) = {info['gcd_210']}")
-    
-    if info['solvable']:
-        print(f"\nSOLVABLE: N={info['N']} has gcd(N,210)=1")
-        print("   A zero-energy solution EXISTS (Klarner's theorem)")
-    else:
-        print(f"N={info['N']} is divisible by {info['factors']}")
-        print("   No guarantees that the zero-energy solution exists!")
-        print("   The algorithm will find the MINIMUM energy configuration.")
-    print("="*60 + "\n")
-
-
-def load_config(config_path):
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
-
-
-def run_solver(config, seed, size):
-    """Run the solver with parameters from config and specific seed and size."""
-    steps = config['steps']
-    method = config['method']
-    cooling = config['cooling']
-    beta_min = config['beta_min']
-    beta_max = config['beta_max']
-    simulated_annealing = config.get('simulated_annealing')
-    complexity = config.get('complexity')
-    energy_reground_interval = config.get('energy_reground_interval', 0)
-    energy_treatment = config.get('energy_treatment')
-    
-    # Create fresh state and solver for each run to avoid state leakage
-    key = jax.random.PRNGKey(seed)
-    board = BoardState(key, size)
-    solver = MCMCSolver(board)
-    
-    print(f"Running 3D {size}×{size}×{size} Queens with {steps} steps (Seed: {seed})...")
-    print(f"Method: {method}, Cooling: {cooling}, SA: {simulated_annealing}, Complexity: {complexity}")
-    
-    if method == 'basic':
-        solution, energy_history, metric = solver.run(
-            key, 
-            num_steps=steps,
-            initial_beta=beta_min,
-            final_beta=beta_max,
-            cooling=cooling,
-            simulated_annealing=simulated_annealing,
-            complexity=complexity,
-            energy_reground_interval=energy_reground_interval,
-            name_energy_treatment=energy_treatment
-        )
-    elif method == 'improved':
-        solution, energy_history, metric = solver.run_improved(
-            key,
-            num_steps=steps,
-            initial_beta=beta_min,
-            final_beta=beta_max,
-            cooling=cooling,
-            simulated_annealing=simulated_annealing,
-            complexity=complexity,
-            energy_reground_interval=energy_reground_interval,
-            name_energy_treatment=energy_treatment
-        )
-    else:
-        raise ValueError(f"Unknown method: {method}")
+    def __init__(self, config: Config):
+        """
+        Initialize runner with configuration.
         
-    return solution, energy_history, metric
+        Args:
+            config: Configuration instance
+        """
+        self.config = config
+    
+    def run_single(self, size: int, seed: int) -> Tuple[any, np.ndarray, float]:
+        """
+        Run a single solver execution.
+        
+        Args:
+            size: Board dimension N
+            seed: Random seed
+            
+        Returns:
+            Tuple of (board_state, energy_history, acceptance_rate)
+        """
+        key = jax.random.PRNGKey(seed)
+        
+        # Create board based on state space type
+        if self.config.state_space == 'reduced':
+            board = ReducedBoardState(key, size)
+            solver = ReducedStateSolver(board, seed)
+        else:
+            board = FullBoardState(key, size)
+            solver = FullStateSolver(board, seed)
+        
+        # Run solver
+        result_board, energy_history, accept_rate = solver.run(
+            num_steps=self.config.steps,
+            initial_beta=self.config.beta_min,
+            final_beta=self.config.beta_max,
+            cooling=self.config.cooling,
+            simulated_annealing=self.config.simulated_annealing,
+            energy_treatment=self.config.energy_treatment,
+            complexity=self.config.complexity,
+            energy_reground_interval=self.config.energy_reground_interval,
+            log_interval=self.config.log_interval,
+            verbose=True
+        )
+        
+        return result_board, energy_history, accept_rate
+    
+    def run_multiple(self, size: int) -> List[Tuple[any, np.ndarray, float]]:
+        """
+        Run multiple solver executions with different seeds.
+        
+        Args:
+            size: Board dimension N
+            
+        Returns:
+            List of (board_state, energy_history, acceptance_rate) tuples
+        """
+        results = []
+        base_seed = self.config.seed
+        
+        for i in range(self.config.num_runs):
+            seed = base_seed + i
+            print(f"\n{'='*60}")
+            print(f"Run {i+1}/{self.config.num_runs} (seed={seed})")
+            print(f"{'='*60}")
+            
+            result = self.run_single(size, seed)
+            results.append(result)
+        
+        return results
+    
+    def run(self) -> dict:
+        """
+        Execute solver based on configuration.
+        
+        Returns:
+            Dictionary with results for each board size
+        """
+        all_results = {}
+        
+        for size in self.config.sizes:
+            print(f"\n{'#'*60}")
+            print(f"# Board Size N = {size}")
+            print(f"{'#'*60}")
+            
+            # Print solvability info
+            solvability = check_solvability(size)
+            self._print_solvability(solvability)
+            
+            if self.config.mode == 'single':
+                board, history, accept_rate = self.run_single(size, self.config.seed)
+                all_results[size] = {
+                    'board': board,
+                    'history': history,
+                    'accept_rate': accept_rate,
+                    'final_energy': board.energy,
+                }
+            else:
+                results = self.run_multiple(size)
+                
+                # Aggregate statistics
+                final_energies = [r[0].energy for r in results]
+                histories = [r[1] for r in results]
+                accept_rates = [r[2] for r in results]
+                
+                # Find best
+                best_idx = np.argmin(final_energies)
+                
+                all_results[size] = {
+                    'boards': [r[0] for r in results],
+                    'histories': histories,
+                    'accept_rates': accept_rates,
+                    'final_energies': final_energies,
+                    'best_board': results[best_idx][0],
+                    'best_energy': final_energies[best_idx],
+                    'avg_energy': np.mean(final_energies),
+                    'success_rate': sum(e == 0 for e in final_energies) / len(final_energies),
+                }
+                
+                self._print_multiple_summary(size, all_results[size])
+        
+        return all_results
+    
+    def _print_solvability(self, info: dict) -> None:
+        """Print solvability information."""
+        print(f"\nSolvability Check for N={info['N']}:")
+        print(f"  Queens: {info['queens']}, Cells: {info['cells']}")
+        print(f"  Density: {info['density']:.1%}")
+        print(f"  gcd(N, 210) = {info['gcd_210']}")
+        
+        if info['solvable']:
+            print(f"  ✓ SOLVABLE: Zero-energy solution exists")
+        else:
+            print(f"  ✗ May be UNSOLVABLE: N divisible by {info['blocking_factors']}")
+        print()
+    
+    def _print_multiple_summary(self, size: int, results: dict) -> None:
+        """Print summary for multiple runs."""
+        print(f"\n{'='*60}")
+        print(f"Summary for N={size} ({len(results['final_energies'])} runs)")
+        print(f"{'='*60}")
+        print(f"Average final energy: {results['avg_energy']:.2f}")
+        print(f"Best energy: {results['best_energy']:.0f}")
+        print(f"Success rate: {results['success_rate']:.1%}")
+        print(f"{'='*60}")
 
 
-def pad_history(history, target_length):
-    """Pad history with its last value to match target length."""
-    current_length = len(history)
-    if current_length < target_length:
-        padding = np.full(target_length - current_length, history[-1])
-        return np.concatenate([history, padding])
-    return history
+# =============================================================================
+# CLI Interface
+# =============================================================================
+
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='3D N² Queens MCMC Solver',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    
+    # Config file
+    parser.add_argument(
+        '--config', '-c',
+        type=str,
+        default='config.yaml',
+        help='Path to YAML configuration file'
+    )
+    
+    # Override options
+    parser.add_argument(
+        '--size', '-n',
+        type=int,
+        nargs='+',
+        help='Board size(s) N (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--steps', '-s',
+        type=int,
+        help='Number of MCMC steps (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--seed',
+        type=int,
+        help='Random seed (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--state-space',
+        type=str,
+        choices=['full', 'reduced'],
+        help='State space type (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--complexity',
+        type=str,
+        choices=['hash', 'iter', 'endangered'],
+        help='Energy computation: hash (O(1)), iter (O(N²) pairs), or endangered (O(N²) queens)'
+    )
+    
+    parser.add_argument(
+        '--log-interval',
+        type=int,
+        help='Log progress every N steps (0 = auto, default 10%% of steps)'
+    )
+    
+    parser.add_argument(
+        '--cooling',
+        type=str,
+        choices=['linear', 'geometric', 'adaptive'],
+        help='Cooling schedule (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--mode',
+        type=str,
+        choices=['single', 'multiple'],
+        help='Execution mode (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--num-runs',
+        type=int,
+        help='Number of runs for multiple mode (overrides config)'
+    )
+    
+    parser.add_argument(
+        '--no-annealing',
+        action='store_true',
+        help='Disable simulated annealing'
+    )
+    
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Verbose output'
+    )
+    
+    parser.add_argument(
+        '--save',
+        action='store_true',
+        help='Save results (plots and data)'
+    )
+    
+    parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        help='Output directory for saved results'
+    )
+    
+    parser.add_argument(
+        '--show',
+        action='store_true',
+        help='Show plots interactively'
+    )
+    
+    return parser.parse_args()
+
+
+def load_config_with_overrides(args: argparse.Namespace) -> Config:
+    """
+    Load configuration from file and apply CLI overrides.
+    
+    Args:
+        args: Parsed command line arguments
+        
+    Returns:
+        Configuration with overrides applied
+    """
+    try:
+        config = Config.from_yaml(args.config)
+    except FileNotFoundError:
+        print(f"Warning: Config file '{args.config}' not found, using defaults")
+        config = Config()
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        sys.exit(1)
+    
+    # Apply CLI overrides
+    if args.size:
+        config.sizes = args.size
+    if args.steps:
+        config.steps = args.steps
+    if args.seed:
+        config.seed = args.seed
+    if args.state_space:
+        config.state_space = args.state_space
+    if args.complexity:
+        config.complexity = args.complexity
+    if args.log_interval is not None:
+        config.log_interval = args.log_interval
+    if args.cooling:
+        config.cooling = args.cooling
+    if args.mode:
+        config.mode = args.mode
+    if args.num_runs:
+        config.num_runs = args.num_runs
+    if args.no_annealing:
+        config.simulated_annealing = False
+    if args.save:
+        config.save = True
+    if args.output_dir:
+        config.output_dir = args.output_dir
+    if args.show:
+        config.show = True
+    
+    return config
 
 
 def main():
-    parser = argparse.ArgumentParser(description='3D N² Queens MCMC Solver')
-    parser.add_argument('--config', type=str, default='config.yaml', help='Path to config file')
-    args = parser.parse_args()
+    """Main entry point."""
+    args = parse_args()
     
-    try:
-        config = load_config(args.config)
-    except FileNotFoundError:
-        print(f"Error: Config file '{args.config}' not found.")
-        return
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        return
-
-    # Handle 'sizes' list or fallback to single 'size'
-    sizes = config.get('sizes')
-    if sizes is None:
-        if 'size' in config:
-            sizes = [config['size']]
+    # Load configuration
+    config = load_config_with_overrides(args)
+    
+    # Validate
+    errors = config.validate()
+    if errors:
+        print("Configuration errors:")
+        for error in errors:
+            print(f"  - {error}")
+        sys.exit(1)
+    
+    # Print configuration
+    config.print_summary()
+    
+    # Run solver
+    runner = SolverRunner(config)
+    results = runner.run()
+    
+    # Final summary
+    print(f"\n{'#'*60}")
+    print("# Final Results")
+    print(f"{'#'*60}")
+    
+    for size, result in results.items():
+        if config.mode == 'single':
+            energy = result['final_energy']
+            status = "✓ SOLVED" if energy == 0 else f"Best energy: {energy:.0f}"
+            print(f"N={size}: {status}")
         else:
-            print("Error: No 'sizes' or 'size' specified in config.")
-            return
-            
-    if not isinstance(sizes, list):
-        sizes = [sizes]
-
-    mode = config.get('mode')
-    if mode not in ('single', 'multiple'):
-        raise ValueError(f"Error: mode = {mode}")
-
-    show_plots = config.get('show')
+            print(f"N={size}: Best={result['best_energy']:.0f}, "
+                  f"Avg={result['avg_energy']:.2f}, "
+                  f"Success={result['success_rate']:.1%}")
     
-    for size in sizes:
-        print("\n" + "="*80)
-        print(f"STARTING RUNS FOR BOARD SIZE N={size}")
-        print("="*80 + "\n")
+    # Always save results to timestamped folders
+    print(f"\n{'#'*60}")
+    print("# Saving Results")
+    print(f"{'#'*60}")
+    
+    for size, result in results.items():
+        metadata = {
+            'board_size': size,
+            'steps': config.steps,
+            'seed': config.seed,
+            'state_space': config.state_space,
+            'cooling': config.cooling,
+            'beta_min': config.beta_min,
+            'beta_max': config.beta_max,
+            'simulated_annealing': config.simulated_annealing,
+            'energy_treatment': config.energy_treatment,
+        }
         
-        # Check solvability first
-        solvability = check_solvability(size)
-        print_solvability_info(solvability)
-        
-        if mode == 'single':
-            base_seed = config.get('seed')
-            solution, energy_history, metric = run_solver(config, base_seed, size)
-
-            endangered = count_endangered_queens(solution)
-            print(f"Endangered Queens: {endangered}")
+        if config.mode == 'single':
+            board = result['board']
+            history = result['history']
+            metadata['accept_rate'] = result['accept_rate']
             
-            print("\nResults:")
-            print(f"Final energy: {solution.energy}")
-            print(f"Acceptance rate: {metric:.2%}")
-
-            if float(solution.energy) == 0:
-                print("Valid solution found!")
-            else:
-                print("No zero-energy solution found.")
+            # Always save to timestamped folder with competition format
+            saved = save_run_results(
+                config.output_dir, board, history, metadata,
+                save_plots=config.save, save_data=config.save
+            )
+            print(f"N={size}: Saved to {saved['run_folder']}/")
+            print(f"  - solution.txt (competition format)")
+            print(f"  - metadata.json")
+            if config.save:
+                print(f"  - solution.png, latin_square.png, energy_history.png")
+            
+            if config.show:
+                visualize_solution(board, show=True, metadata=metadata)
+                visualize_latin_square(board, show=True, metadata=metadata)
+                plot_energy_history(history, show=True, metadata=metadata)
+        else:
+            boards = result['boards']
+            histories = result['histories']
+            accept_rates = result['accept_rates']
+            metadata['num_runs'] = config.num_runs
+            
+            # Save each run to its own timestamped folder
+            for i, (board, history, acc_rate) in enumerate(zip(boards, histories, accept_rates)):
+                run_metadata = metadata.copy()
+                run_metadata['seed'] = config.seed + i
+                run_metadata['run_index'] = i + 1
+                run_metadata['accept_rate'] = acc_rate
                 
-            # Visualize
-            sol_file = f"solution_N{size}_seed{base_seed}.png"
-            visualize_solution(solution, endangered, sol_file)
-            print(f"\n3D visualization saved as {sol_file}")
+                saved = save_run_results(
+                    config.output_dir, board, history, run_metadata,
+                    save_plots=config.save, save_data=config.save
+                )
+                print(f"N={size} Run {i+1}: Saved to {saved['run_folder']}/")
             
-            latin_file = f"latin_square_N{size}_seed{base_seed}.png"
-            visualize_latin_square(solution, endangered, latin_file)
-            print(f"Latin square visualization saved as {latin_file}")
+            # Also save summary for multiple runs
+            if config.save:
+                results_tuples = [(b, h, r) for b, h, r in 
+                                  zip(boards, histories, accept_rates)]
+                saved = save_multiple_results(
+                    config.output_dir, results_tuples, histories, metadata,
+                    save_plots=True, save_data=True
+                )
+                print(f"N={size}: Summary saved to {config.output_dir}/")
             
-            energy_file = f"energy_history_N{size}_seed{base_seed}.png"
-            plot_energy_history(energy_history, energy_file)
-            print(f"Energy history saved as {energy_file}")
-            
-            if show_plots:
-                print("\nDisplaying plots (close windows to exit)...")
-                visualize_solution(solution, endangered, sol_file)
-                visualize_latin_square(solution, endangered, latin_file)
-                plot_energy_history(energy_history)
-                plt.show()
-                
-        elif mode == 'multiple':
-            num_runs = config.get('num_runs')
-            print(f"Executing {num_runs} runs in '{mode}' mode for N={size}...")
-            
-            # Simple incremental seed generation
-            base_seed = config.get('seed', 42)
-            seeds = [base_seed + i for i in range(num_runs)]
-            
-            histories = []
-            final_energies = []
-            solutions = []
-            
-            for i, seed in enumerate(seeds):
-                print(f"\n--- Run {i+1}/{num_runs} (N={size}) ---")
-                solution, energy_history, metric = run_solver(config, seed, size)
-                
-                histories.append(energy_history)
-                final_energies.append(float(solution.energy))
-                solutions.append(solution)
-                
-                print(f"Run {i+1} Result: Energy={solution.energy}")
-            
-            # Determine max length for padding
-            max_len = max(len(h) for h in histories)
-            padded_histories = [pad_history(h, max_len) for h in histories]
-            
-            # Statistics
-            avg_energy = np.mean(final_energies)
-            min_energy = np.min(final_energies)
-            success_rate = sum(e == 0 for e in final_energies) / num_runs
-            
-            print("\n" + "="*60)
-            print(f"MULTIPLE RUNS SUMMARY (N={size}, {num_runs} runs)")
-            print("="*60)
-            print(f"Average Final Energy: {avg_energy:.2f}")
-            print(f"Minimum Final Energy: {min_energy}")
-            print(f"Success Rate: {success_rate:.1%}")
-            
-            # Prepare metadata for plot
-            simulated_annealing = config.get('simulated_annealing')
-            beta_range = f"{config['beta_min']} -> {config['beta_max']}" if simulated_annealing else \
-                f"{config['beta_min']} (Constant)"
-            
-            metadata = {
-                'beta_range': beta_range,
-                'steps': config['steps'],
-                'cooling_method': config['cooling'] if simulated_annealing else 'None',
-                'board_size': size,
-                'energy_treatment': config.get('energy_treatment'),
-                'final_energy': avg_energy
-            }
-            
-            # Visualize Averaged Energy
-            avg_energy_file = f"averaged_energy_history_N{size}.png"
-            plot_averaged_energy_history(padded_histories, avg_energy_file, metadata=metadata)
-            print(f"\nAveraged energy history saved as {avg_energy_file}")
-            
-            # Visualize Best Solution
-            best_idx = np.argmin(final_energies)
-            best_solution = solutions[best_idx]
-            endangered = count_endangered_queens(best_solution)
-            print(f"Endangered Queens: {endangered}")
-            best_sol_file = f"best_solution_N{size}.png"
-            visualize_solution(best_solution, endangered, best_sol_file)
-            print(f"Best solution visualization saved as {best_sol_file}")
-            
-            best_latin_file = f"best_latin_square_N{size}.png"
-            visualize_latin_square(best_solution, endangered, best_latin_file)
-            print(f"Best Latin square visualization saved as {best_latin_file}")
-            
-            if show_plots:
-                print("\nDisplaying plots (close windows to exit)...")
-                plot_averaged_energy_history(padded_histories, metadata=metadata)
-                visualize_solution(best_solution, endangered, best_sol_file)
-                visualize_latin_square(best_solution, endangered, best_latin_file)
-                plt.show()
+            if config.show:
+                plot_averaged_energy_history(histories, show=True, metadata=metadata)
+                visualize_solution(result['best_board'], show=True, metadata=metadata)
+    
+    print()
 
-
-def count_endangered_queens(solution):
-    """
-    Calculates the number of queens that are under attack by at least one other queen.
-    Unlike 'energy' (which counts pairs), this counts specific queens.
-    """
-    # Convert JAX array to numpy for standard iteration
-    queens = np.array(solution.queens)
-    num_queens = len(queens)
-    endangered_count = 0
-
-    for i in range(num_queens):
-        q1 = queens[i]
-        is_endangered = False
-        
-        for j in range(num_queens):
-            if i == j: 
-                continue
-            
-            q2 = queens[j]
-            
-            # --- Attack Logic (Same as BoardState) ---
-            # Calculate absolute differences
-            delta = np.abs(q1 - q2)
-            d_i, d_j, d_k = delta[0], delta[1], delta[2]
-            
-            # 1. Rook-type: share at least two coordinates
-            # Sum of boolean matches (i==i) + (j==j) + (k==k)
-            matches = np.sum(q1 == q2)
-            if matches >= 2:
-                is_endangered = True
-                break
-            
-            # 2. Planar diagonals (share 1 coord, diff of others is equal)
-            # xy-plane (k is same)
-            if q1[2] == q2[2] and d_i == d_j:
-                is_endangered = True
-                break
-            # xz-plane (j is same)
-            if q1[1] == q2[1] and d_i == d_k:
-                is_endangered = True
-                break
-            # yz-plane (i is same)
-            if q1[0] == q2[0] and d_j == d_k:
-                is_endangered = True
-                break
-
-            # 3. Space diagonal (all 3 diffs equal)
-            if d_i == d_j == d_k:
-                is_endangered = True
-                break
-        
-        if is_endangered:
-            endangered_count += 1
-            
-    return endangered_count
 
 if __name__ == "__main__":
     main()

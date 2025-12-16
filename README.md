@@ -1,124 +1,35 @@
 # 3D N² Queens MCMC Solver
 
-**EPFL - Markov Chains and Algorithmic Applications - Fall 2025-2026**
+**EPFL - Markov Chains and Algorithmic Applications**
 
-This project solves the 3D N²-Queens problem using Markov Chain Monte Carlo (MCMC) methods with JAX acceleration. The goal is to place N² queens on an N×N×N cubic chessboard such that no two queens attack each other.
+Solve the 3D N²-Queens problem using Markov Chain Monte Carlo (MCMC) with JAX acceleration. Place N² queens on an N×N×N cubic chessboard such that no two queens attack each other.
+
+---
+
+## Quick Start
+
+```bash
+# Install dependencies
+conda env create -f environment.yml
+conda activate markov-queens
+
+# Run with config file
+python main.py --config config.yaml
+
+# Or with command line options
+python main.py --size 5 --steps 100000 --state-space reduced
+```
 
 ---
 
 ## Table of Contents
-1. [Problem Description](#problem-description)
-2. [Theoretical Background](#theoretical-background)
-3. [Solvability Conditions](#solvability-conditions)
-4. [MCMC Methods](#mcmc-methods)
-5. [Installation](#installation)
-6. [Usage](#usage)
-7. [Project Structure](#project-structure)
-8. [Experiments](#experiments)
-9. [Results](#results)
-10. [Troubleshooting](#troubleshooting)
 
----
-
-## Problem Description
-
-On a 3D N×N×N chessboard, place N² queens such that no two queens attack each other.
-
-### Board and Configuration
-- **Board**: B_N = {0, 1, ..., N-1}³ (a discrete cube with N³ cells)
-- **Configuration**: A set s of N² distinct queen positions
-- **State Space**: |S| = C(N³, N²) possible configurations
-
-### Attack Relations (Definition 2.2)
-
-Two queens at positions (i,j,k) and (i',j',k') attack each other if:
-
-| Attack Type | Condition | Description |
-|-------------|-----------|-------------|
-| **Rook-type** | Share ≥2 coordinates | Same row/column in any plane |
-| **Planar diagonal (xy)** | k=k' and \|i-i'\|=\|j-j'\|≠0 | Diagonal in xy-plane |
-| **Planar diagonal (xz)** | j=j' and \|i-i'\|=\|k-k'\|≠0 | Diagonal in xz-plane |
-| **Planar diagonal (yz)** | i=i' and \|j-j'\|=\|k-k'\|≠0 | Diagonal in yz-plane |
-| **Space diagonal** | \|i-i'\|=\|j-j'\|=\|k-k'\|≠0 | 3D diagonal |
-
-### Energy Function (Definition 2.5)
-
-```
-J(s) = number of attacking pairs in configuration s
-```
-
-A valid solution has **J(s) = 0**.
-
----
-
-## Theoretical Background
-
-### Solvability Conditions
-
-Based on **Klarner's theorem (1967)**, a zero-energy solution exists if and only if:
-
-```
-gcd(N, 210) = 1
-```
-
-where $210 = 2 \cdot 3 \cdot 5 \cdot 7$.
-Note that bold entries in the 'Maximum number of non attacking queens' column are those for which the value
-is NOT proven to be maximal. TODO: SOURCE FOR BOTH COLUMNS (THE MAX NUMB I HAVE THE SOURCE) SOURCES BELOW SEEM A BIT RANDOM
-
-| N  | gcd(N, 210) | Solvable? | Minimum Energy | Maximum number of non attacking queens |
-|----|-------------|-----------|---------------|----------------------------------------|
-| 1  | 1           | ✅ Yes     | 0             | 0                                      |
-| 2  | 2           | ❌ No      | 6             | 2                                      |
-| 3  | 3           | ❌ No      | 13            | 4                                      |
-| 4  | 2           | ❌ No      | ~21           | 7                                      |
-| 5  | 5           | ❌ No      | ~35           | 13                                     |
-| 6  | 6           | ❌ No      | ~50           | 21                                     |
-| 7  | 7           | ❌ No      | ~70           | 32                                     |
-| 8  | 2           | ❌ No      |               | 48                                     |
-| 9  | 3           | ❌ No      |               | 67                                     |
-| 10 | 10          | ❌ No      |               | 91                                     |
-| 11 | 1           | ✅ Yes     | 0             | 121                                    |
-| 12 | 6           | ❌ No      |               | **133**                                    |
-| 13 | 1           | ✅ Yes     | 0             | 169                                    |
-| 14 | 14          | ❌ No      |               | **172**                                    |
-| 15 | 15          | ❌ No      |               | **199**                                    |
-| 16 | 2           | ❌ No      |               | **241**                                    |
-| 17 | 1           | ✅ Yes     | 0             | 289                                    |
-| 18 | 6           | ❌ No      |               | **307**                                |
-
-**First solvable N > 1**: N = 11, 13, 17, 19, 23, ...
-
-### MCMC Approach
-
-The algorithm uses the **Metropolis-Hastings** algorithm:
-
-1. **Proposal**: Move a queen to a new random position
-2. **Acceptance**: Accept with probability α(s→s') = min(1, exp(-β × ΔJ))
-3. **Simulated Annealing**: Gradually increase β to focus on low-energy states
-
----
-
-## MCMC Methods
-
-This implementation provides three MCMC methods:
-
-### 1. Basic Method (`--method basic`)
-- Standard Metropolis-Hastings with single-queen moves
-- Linear simulated annealing schedule
-- Adaptive reheating and restart
-
-### 2. Improved Method (`--method improved`)
-- **Multiple proposal types**:
-  - Move (50%): Move single queen to random cell
-  - Swap (30%): Swap positions of two queens
-  - Greedy (20%): Move queen with most conflicts
-- **Cooling schedules**: linear, geometric, adaptive
-- Better exploration of state space
-
-### 3. Parallel Tempering (`--method parallel`)
-- Multiple replicas at different temperatures
-- Periodic state swaps between adjacent temperatures
-- Best for escaping deep local minima
+1. [Installation](#installation)
+2. [Usage](#usage)
+3. [Configuration](#configuration)
+4. [State Spaces](#state-spaces)
+5. [Project Structure](#project-structure)
+6. [API Reference](#api-reference)
 
 ---
 
@@ -127,82 +38,218 @@ This implementation provides three MCMC methods:
 ### Using Conda (Recommended)
 
 ```bash
-# Create environment
 conda env create -f environment.yml
-
-# Activate environment
 conda activate markov-queens
-
-# Run solver
-python main.py --size 3 --steps 10000
 ```
 
 ### Using pip
 
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run solver
-python main.py --size 3 --steps 10000
 ```
 
 ### Dependencies
 - Python 3.8+
-- JAX (with optional GPU support)
+- JAX
 - NumPy
-- Matplotlib
+- PyYAML
+- Matplotlib (optional, for visualization)
 
 ---
 
 ## Usage
 
-### Basic Usage
+### Command Line Interface
 
 ```bash
-# Simple run (N=3, 10,000 steps)
-python main.py --size 3 --steps 10000
+# Basic usage with config file
+python main.py --config config.yaml
 
-# Improved method with geometric cooling
-python main.py --size 4 --steps 50000 --method improved --cooling geometric
+# Override config options via CLI
+python main.py --size 5 --steps 100000
+python main.py --size 11 --state-space reduced --cooling geometric
+python main.py --mode multiple --num-runs 10
 
-# Parallel tempering with 8 replicas
-python main.py --size 4 --steps 20000 --method parallel --replicas 8
-
-# Show interactive plots
-python main.py --size 3 --steps 10000 --show
+# Full example
+python main.py \
+    --size 5 6 7 \
+    --steps 500000 \
+    --state-space reduced \
+    --cooling geometric \
+    --seed 42
 ```
 
-### Command Line Options
+### CLI Options
 
-| Option | Description | Default | Choices |
-|--------|-------------|---------|---------|
-| `--size` | Board size N | 3 | Any positive integer |
-| `--steps` | MCMC iterations | 10000 | Any positive integer |
-| `--seed` | Random seed | 42 | Any integer |
-| `--method` | MCMC method | basic | basic, improved, parallel |
-| `--cooling` | Cooling schedule | geometric | linear, geometric, adaptive |
-| `--beta-min` | Initial β | 0.1 | Any positive float |
-| `--beta-max` | Final β | 50.0 | Any positive float |
-| `--replicas` | Parallel tempering replicas | 8 | Any positive integer |
-| `--show` | Show interactive plots | False | Flag |
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--config`, `-c` | Path to YAML config file | `config.yaml` |
+| `--size`, `-n` | Board size(s) N (can specify multiple) | from config |
+| `--steps`, `-s` | Number of MCMC steps | from config |
+| `--seed` | Random seed | from config |
+| `--state-space` | `full` or `reduced` | from config |
+| `--cooling` | `linear`, `geometric`, or `adaptive` | from config |
+| `--mode` | `single` or `multiple` | from config |
+| `--num-runs` | Number of runs for multiple mode | from config |
+| `--complexity` | `hash` (O(1)) or `iter` (O(N²)) | from config |
+| `--log-interval` | Steps between progress logs (0=auto) | from config |
+| `--no-annealing` | Disable simulated annealing | False |
+| `--verbose`, `-v` | Verbose output | False |
+| `--save` | Save results (plots and data) | False |
+| `--output-dir`, `-o` | Output directory for saved results | `results` |
+| `--show` | Show plots interactively | False |
 
-### Example Runs
+---
 
-```bash
-# Quick test (unsolvable N=3)
-python main.py --size 3 --steps 10000 --method improved
+## Configuration
 
-# Try solvable N=11
-python main.py --size 11 --steps 100000 --method improved --beta-max 100
+Create a `config.yaml` file to configure the solver:
 
-# Parallel tempering for difficult cases
-python main.py --size 4 --steps 50000 --method parallel --replicas 10
+```yaml
+# =============================================================================
+# Board Configuration
+# =============================================================================
+sizes: [5, 6, 7]           # List of board sizes N to run
+
+# =============================================================================
+# Solver Configuration  
+# =============================================================================
+steps: 1000000             # Number of MCMC steps
+seed: 42                   # Random seed for reproducibility
+
+# State Space Options:
+#   - full: General state space, C(N³, N²) configurations
+#           Queens can be placed anywhere
+#   - reduced: Restricted state space, N^(N²) configurations
+#              One queen per (i,j) pair, only k varies
+state_space: reduced
+
+# Cooling Schedule Options:
+#   - linear: β increases linearly from beta_min to beta_max
+#   - geometric: β increases geometrically (exponential)
+#   - adaptive: β adjusts based on acceptance rate
+cooling: geometric
+
+# Temperature Parameters
+beta_min: 0.1              # Initial inverse temperature
+beta_max: 25.0             # Final inverse temperature
+simulated_annealing: true  # Enable/disable annealing (false = constant beta)
+
+# Energy Treatment Options:
+#   - linear: Use energy directly (E)
+#   - quadratic: Use E²
+#   - log: Use log(1 + E)
+#   - log_quadratic: Use log(1 + E²)
+energy_treatment: linear
+
+# Complexity Options:
+#   - hash: O(1) energy updates using line counting (surrogate energy)
+#   - iter: O(N²) energy updates using iterative attack checking (true energy)
+complexity: hash
+
+# Energy Regrounding (for numerical stability, hash only)
+energy_reground_interval: 10000  # Steps between recalculations (0 = disable)
+
+# Log Interval: how often to print progress (0 = auto, default 10% of steps)
+log_interval: 100000
+
+# =============================================================================
+# Execution Configuration
+# =============================================================================
+# Mode Options:
+#   - single: Run once with the specified seed
+#   - multiple: Run num_runs times with different seeds
+mode: single
+num_runs: 10               # Number of runs if mode is 'multiple'
+
+# =============================================================================
+# Output Configuration
+# =============================================================================
+show: false                # Show plots interactively
+save: false                # Save results (plots and data)
+output_dir: results        # Directory for saved results
 ```
+
+### Configuration Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sizes` | list[int] | `[5]` | Board sizes to run |
+| `steps` | int | `1000000` | MCMC iterations |
+| `seed` | int | `42` | Random seed |
+| `state_space` | str | `full` | `full` or `reduced` |
+| `cooling` | str | `geometric` | `linear`, `geometric`, `adaptive` |
+| `beta_min` | float | `0.1` | Initial β |
+| `beta_max` | float | `25.0` | Final β |
+| `simulated_annealing` | bool | `true` | Enable annealing |
+| `energy_treatment` | str | `linear` | Energy function |
+| `complexity` | str | `hash` | `hash` (O(1)) or `iter` (O(N²)) |
+| `energy_reground_interval` | int | `0` | Regrounding interval |
+| `log_interval` | int | `0` | Progress log interval (0=auto) |
+| `mode` | str | `single` | `single` or `multiple` |
+| `num_runs` | int | `1` | Runs for multiple mode |
+| `show` | bool | `false` | Show plots |
+| `save` | bool | `false` | Save results |
+| `output_dir` | str | `results` | Output directory |
+
+---
+
+## State Spaces
+
+### Full State Space (`state_space: full`)
+
+- **Configuration**: Any N² positions on the N×N×N cube
+- **State space size**: C(N³, N²) ≈ very large
+- **Proposal**: Move random queen to random empty cell
+- **Use when**: Exploring all possible configurations
+
+### Reduced State Space (`state_space: reduced`)
+
+- **Configuration**: One queen per (i,j) pair at height k(i,j)
+- **State space size**: N^(N²) — much smaller
+- **Proposal**: Change k-coordinate for random (i,j)
+- **Guarantees**: No rook attacks in ij-direction
+- **Use when**: Faster convergence, still finds solutions
+
+**Recommendation**: Use `reduced` for most cases — it's faster and still correct.
+
+---
+
+## Energy Computation (Complexity)
+
+### Hash (`complexity: hash`) - O(1) per step
+
+- Uses **line counting** data structure
+- Tracks queens on each of 13 line families (rooks, diagonals, space diagonals)
+- Energy = sum of C(n,2) for each line with n queens
+- **Exact energy**: Correctly counts attacking pairs (same as iter)
+- **Fast**: Constant time per MCMC step regardless of N
+
+### Iter (`complexity: iter`) - O(N²) per step
+
+- Uses **iterative attack checking**
+- Directly counts attacking pairs by checking all queen pairs
+- **True energy**: Exact count of attacking pairs
+- **Slower**: Linear in number of queens (N²) per step
+
+### Endangered (`complexity: endangered`) - O(N²) per step
+
+- Uses **iterative attack checking**
+- Counts number of **endangered queens** (queens under attack by at least one other)
+- **Alternative energy**: Minimizes number of queens at risk
+- **Slower**: Linear in number of queens (N²) per step
+
+### Which to use?
+
+| Scenario | Recommendation |
+|----------|----------------|
+| Large N (≥10) | `hash` — much faster |
+| Small N (<10) | `iter` — similar speed, exact energy |
+| Accuracy needed | `iter` — true energy (attacking pairs) |
+| Speed needed | `hash` — O(1) updates |
+| Alternative metric | `endangered` — minimize queens at risk |
+
+**Note**: All methods correctly identify solutions (energy = 0). Hash and iter now compute the **same exact energy** (attacking pairs). The metadata saves `final_energy_hash`, `final_energy_iter`, and `final_energy_endangered` for verification.
 
 ---
 
@@ -210,157 +257,133 @@ python main.py --size 4 --steps 50000 --method parallel --replicas 10
 
 ```
 Markov/
-├── main.py                 # Main entry point
-├── experiments.py          # Experiment scripts for project tasks
+├── main.py              # Entry point with CLI
+├── config.yaml          # Configuration file
 ├── src/
-│   ├── __init__.py
-│   ├── board.py           # BoardState class, energy computation
-│   ├── solver.py          # MCMCSolver with all methods
-│   └── visualize.py       # 3D visualization functions
+│   ├── __init__.py      # Package exports
+│   ├── interfaces.py    # Abstract base classes
+│   ├── board.py         # FullBoardState, ReducedBoardState
+│   ├── solver.py        # FullStateSolver, ReducedStateSolver
+│   ├── config.py        # Config dataclass
+│   └── utils.py         # JIT utilities, energy functions
 ├── tests/
 │   ├── __init__.py
-│   └── test_implementation.py  # Unit tests
-├── environment.yml         # Conda environment
-├── requirements.txt        # pip requirements
-└── README.md              # This file
+│   └── test_refactored.py
+├── environment.yml
+├── requirements.txt
+└── README.md
 ```
 
-### Key Components
+### Module Overview
 
-| File | Description |
-|------|-------------|
-| `board.py` | `BoardState` class managing queen positions and energy |
-| `solver.py` | `MCMCSolver` with basic, improved, and parallel tempering methods |
-| `visualize.py` | 3D visualization with cube wireframe, attack lines |
-| `experiments.py` | Scripts for running project experiments |
+| Module | Description |
+|--------|-------------|
+| `src/interfaces.py` | `BoardInterface`, `SolverInterface` abstract classes |
+| `src/board.py` | Board state implementations |
+| `src/solver.py` | MCMC solver implementations with JIT |
+| `src/config.py` | Configuration management |
+| `src/utils.py` | Attack checking, line indices, energy treatments |
 
 ---
 
-## Experiments
+## API Reference
 
-The `experiments.py` script runs experiments for the mini-project tasks:
+### Using as a Library
 
-```bash
-# Run all experiments
-python experiments.py
+```python
+import jax
+from src.board import FullBoardState, ReducedBoardState
+from src.solver import FullStateSolver, ReducedStateSolver, create_solver
+from src.config import Config
 
-# Run specific experiment
-python experiments.py 1  # Energy vs time
-python experiments.py 2  # Simulated annealing comparison
-python experiments.py 3  # Minimal energy vs N
-python experiments.py 4  # Identify special N values
+# Create board
+key = jax.random.PRNGKey(42)
+board = ReducedBoardState(key, N=5)
+
+# Create solver
+solver = ReducedStateSolver(board, seed=42)
+
+# Run MCMC
+result, history, accept_rate = solver.run(
+    num_steps=100000,
+    initial_beta=0.1,
+    final_beta=25.0,
+    cooling='geometric',
+    simulated_annealing=True,
+    energy_treatment='linear',
+    complexity='hash',        # 'hash' (O(1)) or 'iter' (O(N²))
+    log_interval=10000,       # Log every 10k steps
+    verbose=True
+)
+
+print(f"Final energy: {result.energy}")
+print(f"Acceptance rate: {accept_rate:.1%}")
 ```
 
-### Experiment 1: Energy vs Time
-- Plots energy evolution averaged over multiple runs
-- Shows convergence behavior
+### Board Classes
 
-### Experiment 2: Simulated Annealing
-- Compares linear, geometric, and adaptive cooling
-- Determines best cooling schedule
+```python
+# Full state space
+board = FullBoardState(key, N)
+board.get_queens()      # (N², 3) array of positions
+board.get_board()       # (N, N, N) occupancy grid
+board.energy            # Current energy
+board.compute_energy()  # Recompute from scratch
 
-### Experiment 3: Minimal Energy vs N
-- Plots minimum energy as function of board size
-- Shows scaling behavior
+# Reduced state space
+board = ReducedBoardState(key, N)
+board.get_k_config()    # (N, N) array of k-coordinates
+board.get_queens()      # Derived (N², 3) array
+```
 
-### Experiment 4: Special N Values
-- Identifies N values with significantly lower energy
-- Validates theoretical solvability conditions
+### Solver Classes
+
+```python
+# Factory function (auto-selects solver type)
+solver = create_solver(board, seed=42)
+
+# Or explicitly
+solver = FullStateSolver(board, seed=42)
+solver = ReducedStateSolver(board, seed=42)
+
+# Run
+result, history, accept_rate = solver.run(
+    num_steps=100000,
+    initial_beta=0.1,
+    final_beta=25.0,
+    cooling='geometric',       # 'linear', 'geometric', 'adaptive'
+    simulated_annealing=True,
+    energy_treatment='linear', # 'linear', 'quadratic', 'log', 'log_quadratic'
+    complexity='hash',         # 'hash' (O(1)) or 'iter' (O(N²))
+    energy_reground_interval=10000,
+    log_interval=10000,        # 0 = auto (10% of steps)
+    verbose=True
+)
+```
 
 ---
 
-## Results
+## Solvability
 
-### Output Files
+Based on Klarner's theorem, a zero-energy solution exists iff `gcd(N, 210) = 1`.
 
-| File | Description |
-|------|-------------|
-| `solution_{N}x{N}x{N}.png` | 3D visualization of final configuration |
-| `energy_history.png` | Energy evolution during MCMC |
-| `exp1_energy_vs_time_N{N}.png` | Experiment 1 results |
-| `exp2_annealing_comparison_N{N}.png` | Experiment 2 results |
-| `exp3_minimal_energy_vs_N.png` | Experiment 3 results |
-| `exp4_special_N_values.png` | Experiment 4 results |
-
-### Visualization Features
-
-The 3D visualization includes:
-- **Cube wireframe**: Shows board boundaries
-- **Grid lines**: Cell boundaries (for N ≤ 10)
-- **Green spheres**: Safe queens (no conflicts)
-- **Red spheres**: Attacking queens
-- **Dashed lines**: Attack connections
-- **Statistics box**: Board info, density, conflicts
-- **Solvability info**: gcd(N, 210) in title
-
-### Performance
-
-| N | Steps | Time | Rate | Best Energy |
-|---|-------|------|------|-------------|
-| 3 | 10,000 | ~3s | ~3,000/s | 13 |
-| 4 | 50,000 | ~15s | ~3,500/s | 21 |
-| 10 | 100,000 | ~25s | ~4,000/s | ~100 |
-| 11 | 100,000 | ~25s | ~4,000/s | ~150 |
+| N | Solvable | Notes |
+|---|----------|-------|
+| 1 | ✅ | Trivial |
+| 2-10 | ❌ | No solution exists |
+| 11 | ✅ | First non-trivial solvable |
+| 13, 17, 19, 23... | ✅ | gcd(N, 210) = 1 |
 
 ---
 
-## Troubleshooting
-
-### Conda Activation Error
-
-If you see `CondaError: Run 'conda init' before 'conda activate'`:
+## Running Tests
 
 ```bash
-# Initialize Conda
-conda init zsh  # or bash
-
-# Restart terminal, then activate
-conda activate markov-queens
+python tests/test_refactored.py
 ```
-
-### JAX Installation Issues
-
-```bash
-# CPU-only installation
-pip install jax jaxlib
-
-# For GPU support, see: https://github.com/google/jax#installation
-```
-
-### Memory Issues for Large N
-
-For large boards (N > 15), reduce memory usage:
-```bash
-# Use fewer steps
-python main.py --size 15 --steps 50000
-
-# Use parallel tempering with fewer replicas
-python main.py --size 15 --steps 50000 --method parallel --replicas 4
-```
-
-### Slow Performance
-
-1. Ensure JAX is using JIT compilation (first run is slow)
-2. Use `--method improved` for better convergence
-3. Increase `--beta-max` for faster cooling
-
----
-
-## References
-
-1. Klarner, D.A. (1967). "The Problem of Reflecting Queens"
-2. Metropolis, N. et al. (1953). "Equation of State Calculations"
-3. Kirkpatrick, S. et al. (1983). "Optimization by Simulated Annealing"
-4. Swendsen, R.H. & Wang, J.S. (1986). "Replica Monte Carlo Simulation"
 
 ---
 
 ## License
 
-This project is for educational purposes as part of the EPFL Markov Chains course.
-
----
-
-## Author
-
-EPFL - Markov Chains and Algorithmic Applications - Mini-Project
+Educational project for EPFL Markov Chains course.
